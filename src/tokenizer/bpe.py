@@ -1,17 +1,22 @@
 import regex as re
+from collections import defaultdict
 
 class BPE:
     def __init__(self) -> None:
         self.PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
         
-    def _get_max_pair(self, byte_text: list[list[bytes]]) -> tuple[bytes, bytes]:
+    def _get_counts(self, byte_text: list[list[bytes]]) -> dict[tuple[bytes], int]:
         counts: dict[tuple[bytes], int] = dict()
+        counts: defaultdict = defaultdict(int)
 
         for word in byte_text:
             for i, j in zip(word, word[1:]):
-                if (i, j) not in counts:
-                    counts[(i, j)] = 0
                 counts[(i, j)] += 1
+                
+        return counts
+        
+    def _get_max_pair(self, byte_text: list[list[bytes]]) -> tuple[bytes, bytes]:
+        counts: dict[tuple[bytes], int] = self._get_counts(byte_text)
                 
         max_pair = max(counts.items(), key=lambda x: (x[1], x[0]))[0]
         return max_pair
