@@ -3,25 +3,17 @@ import regex as re
 class BPE:
     def __init__(self) -> None:
         self.PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-
-    def _get_lexicographic_greater(self, pair1:tuple[bytes, bytes], pair2:tuple[bytes, bytes]) -> tuple[bytes, bytes]:
-        return pair1 if pair1 > pair2 else pair2
         
     def _get_max_pair(self, byte_text: list[list[bytes]]) -> tuple[bytes, bytes]:
         counts: dict[tuple[bytes], int] = dict()
-        max_pair = None
+
         for word in byte_text:
             for i, j in zip(word, word[1:]):
                 if (i, j) not in counts:
                     counts[(i, j)] = 0
                 counts[(i, j)] += 1
                 
-                if max_pair is None or ((i, j) != max_pair and counts[(i, j)] >= counts[max_pair]):
-                    if max_pair is None or counts[(i, j)] > counts[max_pair]:
-                        max_pair = (i, j)
-                    else:
-                        max_pair = self._get_lexicographic_greater((i,j), max_pair)
-
+        max_pair = max(counts.items(), key=lambda x: (x[1], x[0]))[0]
         return max_pair
 
     def _apply_merges(self, byte_text: list[list[bytes]], merge: tuple[bytes]) -> list[bytes]:
@@ -82,9 +74,9 @@ if __name__ == "__main__":
         # Adjust the path to your corpus file as needed
         vocab, merges = bpe.train("data/corpus.en", 500, ["<|endoftext|>"])
     end_time = time.time()
-    print(f"Training completed in {end_time - start_time:.2f} seconds")
     pr.disable()
     pr.print_stats(sort='time')
+    print(f"Training completed in {end_time - start_time:.2f} seconds")
     # Print the vocabulary and merges
     # print("Vocabulary:", vocab)
     # print("Merges:", merges)
