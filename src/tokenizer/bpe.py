@@ -18,8 +18,11 @@ class BPE:
 
     def _apply_merges(self, byte_text: list[list[bytes]], merge: tuple[bytes]) -> list[bytes]:
         for i in range(len(byte_text)):
+            if merge[0] not in byte_text[i] or merge[1] not in byte_text[i]:
+                continue
+            
             j = 0
-            while j < len(byte_text[i]) - 1:
+            while j < len(byte_text[i]) - 1:    
                 word = byte_text[i]
                 a, b = word[j], word[j + 1]
                 if (a, b) == merge:
