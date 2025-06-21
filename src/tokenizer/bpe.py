@@ -5,18 +5,16 @@ class BPE:
         self.PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
     def _get_lexicographic_greater(self, pair1:tuple[bytes, bytes], pair2:tuple[bytes, bytes]) -> tuple[bytes, bytes]:
-        bytes1 = b"".join(pair1)
-        bytes2 = b"".join(pair2)
-        for i in range(max(len(bytes1), len(bytes2))):
-            a = ord(bytes1[i:i+1]) if i < len(bytes1) else -1
-            b = ord(bytes2[i:i+1]) if i < len(bytes2) else -1
-            
-            if a > b:
-                return pair1
-            elif b > a:
-                return pair2
-        return pair2
-        
+        if pair1[:1] > pair2[:1]:
+            return pair1
+        elif pair2[:1] > pair1[:1]:
+            return pair2
+        elif pair1[1:] > pair2[1:]:
+            return pair1
+        elif pair2[1:] > pair1[1:]:
+            return pair2
+
+        return pair1
         
     def _get_max_pair(self, byte_text: list[list[bytes]]) -> tuple[bytes, bytes]:
         counts: dict[tuple[bytes], int] = dict()
@@ -27,20 +25,23 @@ class BPE:
                     counts[(i, j)] = 0
                 counts[(i, j)] += 1
                 
-                if max_pair is None or counts[(i, j)] >= counts[max_pair]:
+                if max_pair is None or ((i, j) != max_pair and counts[(i, j)] >= counts[max_pair]):
                     if max_pair is None or counts[(i, j)] > counts[max_pair]:
                         max_pair = (i, j)
                     else:
                         max_pair = self._get_lexicographic_greater((i,j), max_pair)
-                  
+
         return max_pair
 
     def _apply_merges(self, byte_text: list[list[bytes]], merge: tuple[bytes]) -> list[bytes]:
-        for i, word in enumerate(byte_text):
-            for j, (a, b) in enumerate(zip(word, word[1:])):
+        for i in range(len(byte_text)):
+            j = 0
+            while j < len(byte_text[i]) - 1:
+                word = byte_text[i]
+                a, b = word[j], word[j + 1]
                 if (a, b) == merge:
                     byte_text[i] = tuple(word[:j] + (a + b, ) + word[j+2:])
-                    break
+                j += 1
         return byte_text
 
     def train(self, input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
@@ -50,11 +51,12 @@ class BPE:
         file.close()
         
         pretokenized_text = re.findall(self.PATTERN, text)
-        vocab: dict[int,bytes] = {i: bytes(chr(i), "utf-8") for i in range(256)}
+        vocab: dict[int,bytes] = {i: bytes([i]) for i in range(256)}
         byte_text: list[list[bytes]] = [tuple([bytes(chr(c), "utf-8") for c in bytes(pretoken, "utf-8")]) for pretoken in pretokenized_text]
-        current_vocab_size: int = 256
+        current_vocab_size: int = len(vocab)
+        num_merges = vocab_size - current_vocab_size - len(special_tokens)
         merges: list[tuple[bytes, bytes]] = list()
-        while current_vocab_size < vocab_size:
+        for _ in range(num_merges):
             
             max_pair = self._get_max_pair(byte_text)
             
@@ -65,6 +67,12 @@ class BPE:
             
             if current_vocab_size < vocab_size:
                 byte_text = self._apply_merges(byte_text, max_pair)
+        
+        # Add special tokens to the vocabulary
+        for token in special_tokens:
+            if token not in vocab.values():
+                vocab[current_vocab_size] = token.encode("utf-8")
+                current_vocab_size += 1
         
         return vocab, merges
     
