@@ -5,16 +5,7 @@ class BPE:
         self.PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
     def _get_lexicographic_greater(self, pair1:tuple[bytes, bytes], pair2:tuple[bytes, bytes]) -> tuple[bytes, bytes]:
-        if pair1[:1] > pair2[:1]:
-            return pair1
-        elif pair2[:1] > pair1[:1]:
-            return pair2
-        elif pair1[1:] > pair2[1:]:
-            return pair1
-        elif pair2[1:] > pair1[1:]:
-            return pair2
-
-        return pair1
+        return pair1 if pair1 > pair2 else pair2
         
     def _get_max_pair(self, byte_text: list[list[bytes]]) -> tuple[bytes, bytes]:
         counts: dict[tuple[bytes], int] = dict()
@@ -47,12 +38,10 @@ class BPE:
     def train(self, input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
         
         assert vocab_size > 256, "Vocabulary size must be greater than 256"
-        
-        file = open(input_path, "r", encoding="utf-8")
-        # chunk_boundaries = find_chunk_boundaries(file, desired_num_chunks, split_special_tokens)
-        text = file.read()
-        file.close()
-        
+        with open(input_path, "r", encoding="utf-8") as file:
+            # chunk_boundaries = find_chunk_boundaries(file, desired_num_chunks, split_special_tokens)
+            text = file.read()
+
         pretokenized_text = re.finditer(self.PATTERN, text)
         byte_text: list[list[bytes]] = [tuple(c.encode("utf-8") for c in pretoken.group()) for pretoken in pretokenized_text]
 
@@ -84,6 +73,18 @@ class BPE:
     
 if __name__ == "__main__":
     bpe = BPE()
-    vocab, merges = bpe.train("data/bpe_test.txt", 259, [])
-    print("Vocabulary:", vocab)
-    print("Merges:", merges)
+    import time
+    import cProfile
+    start_time = time.time()
+    with cProfile.Profile() as pr:
+        pr.enable()
+        # Train the BPE tokenizer on a sample corpus
+        # Adjust the path to your corpus file as needed
+        vocab, merges = bpe.train("data/corpus.en", 500, ["<|endoftext|>"])
+    end_time = time.time()
+    print(f"Training completed in {end_time - start_time:.2f} seconds")
+    pr.disable()
+    pr.print_stats(sort='time')
+    # Print the vocabulary and merges
+    # print("Vocabulary:", vocab)
+    # print("Merges:", merges)
