@@ -5,11 +5,11 @@ class BPE:
         self.PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
     def _get_lexicographic_greater(self, pair1:tuple[bytes, bytes], pair2:tuple[bytes, bytes]) -> tuple[bytes, bytes]:
-        bytes1 = pair1[0:1] + pair1[1:]
-        bytes2 = pair2[0:1] + pair2[1:]
+        bytes1 = b"".join(pair1)
+        bytes2 = b"".join(pair2)
         for i in range(max(len(bytes1), len(bytes2))):
-            a = ord(bytes1[i]) if i < len(bytes1) else -1
-            b = ord(bytes2[i]) if i < len(bytes2) else -1
+            a = ord(bytes1[i:i+1]) if i < len(bytes1) else -1
+            b = ord(bytes2[i:i+1]) if i < len(bytes2) else -1
             
             if a > b:
                 return pair1
@@ -58,7 +58,7 @@ class BPE:
             
             max_pair = self._get_max_pair(byte_text)
             
-            vocab[current_vocab_size] = max_pair
+            vocab[current_vocab_size] = b"".join(max_pair)
             merges.append(max_pair)
             
             current_vocab_size += 1
@@ -70,6 +70,6 @@ class BPE:
     
 if __name__ == "__main__":
     bpe = BPE()
-    vocab, merges = bpe.train("input.txt", 259, [])
+    vocab, merges = bpe.train("data/bpe_test.txt", 259, [])
     print("Vocabulary:", vocab)
     print("Merges:", merges)
