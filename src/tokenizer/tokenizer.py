@@ -67,7 +67,9 @@ class Tokenizer:
         return tokenized_text
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        pass
+        for line in iterable:
+            for token in self.encode(line):
+                yield token
     
     def decode(self, ids: list[int]) -> str:
         decoded_bytes = b"".join(self.vocab[i] for i in ids if i in self.vocab)
