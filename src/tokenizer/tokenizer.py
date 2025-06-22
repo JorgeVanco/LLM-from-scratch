@@ -39,7 +39,11 @@ class Tokenizer:
         )
         
     def encode(self, text: str) -> list[int]:
-        splitted_text = re.split("(" + "|".join(re.escape(t) for t in self.special_tokens)+")", text)
+        if self.special_tokens:
+            splitted_text = re.split("(" + "|".join(re.escape(t) for t in self.special_tokens)+")", text)
+        else:
+            splitted_text = [text]
+            
         tokenized_text: list[int] = []
         for split_text in splitted_text:
             if split_text not in self.special_tokens:
@@ -58,8 +62,8 @@ class Tokenizer:
                                 j += 1
                     tokenized_text.extend(self.encoding_vocab[t] for t in pretoken)
             else:
-                tokenized_text.append(self.encoding_vocab[split_text.encode("utf-8")])                    
-            
+                tokenized_text.append(self.encoding_vocab[split_text.encode("utf-8")])
+
         return tokenized_text
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
