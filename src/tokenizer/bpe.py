@@ -42,14 +42,21 @@ class BPE:
             # chunk_boundaries = find_chunk_boundaries(file, desired_num_chunks, split_special_tokens)
             text = file.read()
 
-        pretokenized_text = re.finditer(self.PATTERN, text)
-        byte_text: list[list[bytes]] = [tuple(c.encode("utf-8") for c in pretoken.group()) for pretoken in pretokenized_text]
+        if special_tokens:
+            splitted_text = re.split("|".join(re.escape(t) for t in special_tokens), text)
+        else:
+            splitted_text = [text]
+            
+        byte_text: list[tuple[bytes]] = []
+        for t in splitted_text:
+            pretokenized_text = re.finditer(self.PATTERN, t)
+            byte_text.extend(tuple(c.encode("utf-8") for c in pretoken.group()) for pretoken in pretokenized_text)
 
         vocab: dict[int,bytes] = {i: bytes([i]) for i in range(256)}
         current_vocab_size: int = len(vocab)
         merges: list[tuple[bytes, bytes]] = list()
         
-        num_merges = vocab_size - current_vocab_size - len(special_tokens)
+        num_merges: int = vocab_size - current_vocab_size - len(special_tokens)
         
         for _ in range(num_merges):
             
