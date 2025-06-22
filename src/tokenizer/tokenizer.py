@@ -6,7 +6,7 @@ class Tokenizer:
     def __init__(self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: None | list = None) -> None:
         self.vocab = vocab
         self.merges = merges
-        self.special_tokens = special_tokens if special_tokens else []
+        self.special_tokens = sorted(special_tokens, key=len, reverse=True) if special_tokens else []
         
         for special_token in self.special_tokens:
             special_token_bytes = special_token.encode("utf-8")
