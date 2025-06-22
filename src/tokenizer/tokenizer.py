@@ -39,23 +39,26 @@ class Tokenizer:
         )
         
     def encode(self, text: str) -> list[int]:
-        pretokenized_text = re.finditer(self.PATTERN, text)
+        splitted_text = re.split("(" + "|".join(re.escape(t) for t in self.special_tokens)+")", text)
         tokenized_text: list[int] = []
-        
-        for pretoken in pretokenized_text:
-            pretoken = tuple(bytes([c]) for c in pretoken.group().encode("utf-8"))
-            if len(pretoken) >= 2:
-                for merge in self.merges:
-                    if merge[0] not in pretoken or merge[1] not in pretoken:
-                        continue
-                    j = 0
-                    while j < len(pretoken) - 1:
-                        a, b = pretoken[j], pretoken[j + 1]
-                        if (a, b) == merge:
-                            pretoken = tuple(pretoken[:j] + (a + b, ) + pretoken[j+2:])
-                        j += 1
-                    
-            tokenized_text.extend(self.encoding_vocab[t] for t in pretoken)
+        for split_text in splitted_text:
+            if split_text not in self.special_tokens:
+                pretokenized_text = re.finditer(self.PATTERN, split_text)
+                for pretoken in pretokenized_text:
+                    pretoken = tuple(bytes([c]) for c in pretoken.group().encode("utf-8"))
+                    if len(pretoken) >= 2:
+                        for merge in self.merges:
+                            if merge[0] not in pretoken or merge[1] not in pretoken:
+                                continue
+                            j = 0
+                            while j < len(pretoken) - 1:
+                                a, b = pretoken[j], pretoken[j + 1]
+                                if (a, b) == merge:
+                                    pretoken = tuple(pretoken[:j] + (a + b, ) + pretoken[j+2:])
+                                j += 1
+                    tokenized_text.extend(self.encoding_vocab[t] for t in pretoken)
+            else:
+                tokenized_text.append(self.encoding_vocab[split_text.encode("utf-8")])                    
             
         return tokenized_text
 
@@ -64,4 +67,4 @@ class Tokenizer:
     
     def decode(self, ids: list[int]) -> str:
         decoded_bytes = b"".join(self.vocab[i] for i in ids if i in self.vocab)
-        return decoded_bytes.decode()
+        return decoded_bytes.decode("utf-8", errors="replace")
