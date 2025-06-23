@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "einops>=0.8.1",
     "regex>=2024.11.6",
     "torch>=2.7.1",
 ]
