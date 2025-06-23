@@ -69,3 +69,24 @@ class SwiGLU(nn.Module):
         element_product = silu * self.w3(x)
         return self.w2(element_product)
     
+
+class RoPE(nn.Module):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device: torch.device | None = None) -> None:
+        pass
+    
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        return
+    
+    
+class Softmax(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor, dim: int) -> torch.Tensor:
+        max_x = x.amax(dim=dim, keepdim=True)
+        
+        exponentiated_x = (x - max_x).exp()
+        
+        softmax = exponentiated_x / exponentiated_x.sum(dim=dim, keepdim=True)
+        
+        return softmax
