@@ -43,3 +43,29 @@ class RMSNorm(nn.Module):
         result = result.to(in_dtype)
         
         return result
+    
+
+class SiLU(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.sigmoid(x)
+
+
+class SwiGLU(nn.Module):
+    def __init__(self, d_model: int, d_ff: int) -> None:
+        # d_ff should be 8/3 d_model, while ensuring that
+        # the dimensionality of the inner feed-forward layer is a multiple of 64 to make good use of your
+        # hardware
+        super().__init__()
+        self.silu = SiLU()
+        self.w1 = Linear(d_model, d_ff)
+        self.w2 = Linear(d_ff, d_model)
+        self.w3 = Linear(d_model, d_ff)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        silu = self.silu(self.w1(x))
+        element_product = silu * self.w3(x)
+        return self.w2(element_product)
+    
