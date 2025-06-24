@@ -259,3 +259,29 @@ class TransformerBlock(nn.Module):
         x = self.ffn(x)
 
         return res + x
+
+
+class TransformerLM(nn.Module):
+    def __init__(self, vocab_size: int, context_length: int, num_layers: int, d_model: int, num_heads: int, d_ff: int, rope_theta: float) -> None:
+        super().__init__()
+        
+        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+        
+        self.token_embeddings = Embedding(vocab_size, d_model)
+        
+        d_k = d_model // num_heads
+        rope = RotaryPositionalEmbedding(rope_theta, d_k, context_length)
+        
+        self.layers = nn.ModuleList(
+            TransformerBlock(d_model, num_heads, d_ff, rope) for _ in range(num_layers)
+        )
+        self.ln_final = RMSNorm(d_model)
+        self.lm_head = Linear(d_model, vocab_size)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.token_embeddings(x)
+        for layer in self.layers:
+            x = layer(x)
+        x = self.ln_final(x) 
+        x = self.lm_head(x)
+        return x
