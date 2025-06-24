@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from einops import rearrange, einsum
@@ -91,3 +92,15 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     softmax = exponentiated_x / exponentiated_x.sum(dim=dim, keepdim=True)
     
     return softmax
+
+
+def scaled_dot_product_attention(queries: torch.Tensor, keys: torch.Tensor, values: torch.Tensor, mask: None | torch.Tensor) -> None:
+    
+    pre_softmax_values = einsum(queries, keys, "batch_size ... seq_len_q d_k, batch_size ... seq_len_k d_k -> batch_size ... seq_len_q seq_len_k") / math.sqrt(queries.shape[-1])
+    
+    if mask is not None:
+        pre_softmax_values.masked_fill_(~mask, -torch.inf)
+        
+    weights = softmax(pre_softmax_values, -1)
+    
+    return einsum(weights, values, "batch_size ... seq_len_q seq_len_k, batch_size ... seq_len_k d_v -> batch_size ... seq_len_q d_v")
