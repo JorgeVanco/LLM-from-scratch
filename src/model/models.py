@@ -65,12 +65,23 @@ class SwiGLU(nn.Module):
         return self.w2(element_product)
     
 
-class RoPE(nn.Module):
+class RotaryPositionalEmbedding(nn.Module):
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device: torch.device | None = None) -> None:
-        pass
+        super().__init__()
+        i = torch.arange(max_seq_len, device=device).view(-1, 1)
+        k = torch.arange(1, d_k // 2 + 1, device=device)
+        theta_i_k = i / theta ** (2 * (k - 1) / d_k)
+        sin = theta_i_k.sin()
+        cos = theta_i_k.cos()
+        R = [cos, -sin, sin, cos]
+        R = rearrange(R, '(d1 d2) i k -> i k d1 d2', d1=2, d2=2)
+        self.register_buffer("R", R, persistent=False)
     
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
-        return
+        position_matrices = self.R[token_positions]
+        x = rearrange(x, "... seq (k d1) -> ... seq k d1", d1=2)
+        applied_rotary = einsum(x, position_matrices, "... seq k d1, seq k d2 d1 -> ... seq k d2")
+        return rearrange(applied_rotary, "... seq k d2 -> ... seq (k d2)")
     
     
 def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
