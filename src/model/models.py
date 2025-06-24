@@ -125,9 +125,9 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     max_x = x.amax(dim=dim, keepdim=True)
     exponentiated_x = (x - max_x).exp()
 
-    softmax = exponentiated_x / exponentiated_x.sum(dim=dim, keepdim=True)
+    sftmax = exponentiated_x / exponentiated_x.sum(dim=dim, keepdim=True)
 
-    return softmax
+    return sftmax
 
 
 def scaled_dot_product_attention(
@@ -160,8 +160,7 @@ class MultiHeadSelfAttention(nn.Module):
         self,
         d_model: int,
         num_heads: int,
-        max_seq_len: int | None = None,
-        theta: float | None = None,
+        rope: RotaryPositionalEmbedding | None = None,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
     ) -> None:
@@ -172,32 +171,29 @@ class MultiHeadSelfAttention(nn.Module):
 
         self.num_heads = num_heads
 
-        self.q_proj_weight: Float[torch.Tensor, " d_model d_model"] = Linear(
+        self.q_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
-        self.k_proj_weight: Float[torch.Tensor, " d_model d_model"] = Linear(
+        self.k_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
-        self.v_proj_weight: Float[torch.Tensor, " d_model d_model"] = Linear(
+        self.v_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
-        # self.proj_weight: Float[torch.Tensor, ""]
-        self.o_proj_weight: Float[torch.Tensor, " d_model d_model"] = Linear(
+        # self.proj: Float[torch.Tensor, ""]
+        self.output_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
-        if max_seq_len and theta is not None:
-            self.rope = RotaryPositionalEmbedding(theta, d_head, max_seq_len, device)
-        else:
-            self.rope = None
+        self.rope = rope
 
     def forward(
         self, x: torch.Tensor, token_positions: torch.Tensor | None = None
     ) -> torch.Tensor:
         seq_len = x.shape[-2]
 
-        queries = self.q_proj_weight(x)
-        keys = self.k_proj_weight(x)
-        values = self.v_proj_weight(x)
+        queries = self.q_proj(x)
+        keys = self.k_proj(x)
+        values = self.v_proj(x)
 
         queries = rearrange(
             queries,
@@ -231,4 +227,35 @@ class MultiHeadSelfAttention(nn.Module):
             "... num_heads seq_len d_heads -> ... seq_len (num_heads d_heads)",
         )
 
-        return self.o_proj_weight(values)
+        return self.output_proj(values)
+
+
+class TransformerBlock(nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        rope: RotaryPositionalEmbedding | None = None,
+    ) -> None:
+        super().__init__()
+        self.ln1 = RMSNorm(d_model)
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, rope)
+        self.ln2 = RMSNorm(d_model)
+        self.ffn = SwiGLU(d_model, d_ff)
+        self.rope = rope is not None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        position_encodings = torch.arange(x.shape[-2]) if self.rope else None
+        res = x
+
+        x = self.ln1(x)
+        x = self.attn(x, position_encodings)
+        x = res + x
+
+        res = x
+
+        x = self.ln2(x)
+        x = self.ffn(x)
+
+        return res + x
