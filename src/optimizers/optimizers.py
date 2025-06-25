@@ -49,7 +49,7 @@ class AdamW(torch.optim.Optimizer):
                 if p.grad is None:
                     continue
                 
-                state = self.state["p"]
+                state = self.state[p]
                 
                 grad = p.grad.data
                 
