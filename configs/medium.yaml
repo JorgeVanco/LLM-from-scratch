@@ -1,0 +1,55 @@
+# Medium-sized model configuration
+
+experiment_name: "medium"
+description: "Medium-sized model experiment"
+seed: 42
+
+model:
+  vocab_size: 50257
+  context_length: 1024
+  num_layers: 12
+  d_model: 768
+  num_heads: 12
+  d_ff: 3072
+  rope_theta: 10000.0
+
+optimizer:
+  name: "AdamW"
+  lr: 6e-5
+  betas: [0.9, 0.95]
+  eps: 1e-8
+  weight_decay: 0.1
+
+scheduler:
+  use_scheduler: true
+  max_learning_rate: 6e-5
+  min_learning_rate: 6e-6
+  warmup_iters: 2000
+  cosine_cycle_iters: 100000
+
+training:
+  batch_size: 16
+  max_iters: 200000
+  eval_interval: 2000
+  eval_iters: 200
+  log_interval: 200
+  save_interval: 5000
+  gradient_clip_val: 1.0
+  compile_model: true
+  train_data_path: "data/train.txt"
+  val_data_path: "data/val.txt"
+  device: "auto"
+  dtype: "bfloat16"
+
+tokenizer:
+  vocab_path: "tokenizer/vocab.json"
+  merges_path: "tokenizer/merges.txt"
+  special_tokens: ["<|endoftext|>"]
+
+logging:
+  project_name: "llm-from-scratch"
+  run_name: "medium-model"
+  log_dir: "logs"
+  checkpoint_dir: "checkpoints"
+  use_wandb: true
+  wandb_project: "llm-experiments"

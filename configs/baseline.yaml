@@ -1,0 +1,55 @@
+# Baseline configuration for small-scale experiments
+
+experiment_name: "baseline"
+description: "Baseline small model for testing"
+seed: 42
+
+model:
+  vocab_size: 50257
+  context_length: 512
+  num_layers: 6
+  d_model: 384
+  num_heads: 6
+  d_ff: 1536
+  rope_theta: 10000.0
+
+optimizer:
+  name: "AdamW"
+  lr: 3e-4
+  betas: [0.9, 0.95]
+  eps: 1e-8
+  weight_decay: 0.1
+
+scheduler:
+  use_scheduler: true
+  max_learning_rate: 3e-4
+  min_learning_rate: 3e-5
+  warmup_iters: 1000
+  cosine_cycle_iters: 20000
+
+training:
+  batch_size: 8
+  max_iters: 50000
+  eval_interval: 1000
+  eval_iters: 100
+  log_interval: 100
+  save_interval: 2500
+  gradient_clip_val: 1.0
+  compile_model: false
+  train_data_path: "data/train.txt"
+  val_data_path: "data/val.txt"
+  device: "auto"
+  dtype: "float32"
+
+tokenizer:
+  vocab_path: null
+  merges_path: null
+  special_tokens: ["<|endoftext|>"]
+
+logging:
+  project_name: "llm-from-scratch"
+  run_name: null
+  log_dir: "logs"
+  checkpoint_dir: "checkpoints"
+  use_wandb: false
+  wandb_project: null

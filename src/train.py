@@ -1,0 +1,428 @@
+import os
+import sys
+import time
+import random
+import argparse
+from pathlib import Path
+from typing import Optional, Dict, Any
+import numpy as np
+import torch
+import torch.nn as nn
+
+from src.model import TransformerLM
+from src.data_loading import get_batch
+from src.optimizers import SGD, AdamW
+from src.schedulers import learning_rate_cosine
+from src.tokenizer import Tokenizer
+from src.utils import cross_entropy, gradient_clipping, softmax, generate_text, load_checkpoint, save_checkpoint
+from src.config import ExperimentConfig, ConfigManager
+
+
+class Trainer:
+    """Main trainer class for the LLM."""
+    
+    def __init__(self, config: ExperimentConfig) -> None:
+        self.config = config
+        self.setup_environment()
+        self.setup_logging()
+        self.load_data()
+        self.setup_tokenizer()
+        self.setup_model()
+        self.setup_optimizer()
+        self.current_iter = 0
+        self.best_val_loss = float('inf')
+        
+    def setup_environment(self) -> None:
+        """Setup random seeds and device."""
+        # Set random seeds
+        random.seed(self.config.seed)
+        np.random.seed(self.config.seed)
+        torch.manual_seed(self.config.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(self.config.seed)
+            torch.cuda.manual_seed_all(self.config.seed)
+        
+        # Set device
+        if self.config.training.device == "auto":
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(self.config.training.device)
+        
+        # Set dtype
+        self.dtype_map = {
+            'float32': torch.float32,
+            'float16': torch.float16,
+            'bfloat16': torch.bfloat16
+        }
+        self.dtype = self.dtype_map[self.config.training.dtype]
+        
+        print(f"Using device: {self.device}")
+        print(f"Using dtype: {self.dtype}")
+    
+    def setup_logging(self) -> None:
+        """Setup logging and checkpointing directories."""
+        self.log_dir = Path(self.config.logging.log_dir) / self.config.experiment_name
+        self.checkpoint_dir = Path(self.config.logging.checkpoint_dir) / self.config.experiment_name
+        
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Setup wandb if requested
+        if self.config.logging.use_wandb:
+            try:
+                import wandb
+                wandb.init(
+                    project=self.config.logging.wandb_project or self.config.logging.project_name,
+                    name=self.config.logging.run_name or self.config.experiment_name,
+                    config=self.config.__dict__
+                )
+                self.use_wandb = True
+            except ImportError:
+                print("Warning: wandb not installed, skipping wandb logging")
+                self.use_wandb = False
+        else:
+            self.use_wandb = False
+    
+    def load_data(self) -> None:
+        """Load training and validation data."""
+        print("Loading training data...")
+        train_data = np.memmap(self.config.training.train_data_path, dtype=np.uint16)
+        print(train_data)
+        if self.config.training.val_data_path and Path(self.config.training.val_data_path).exists():
+            val_data = np.memmap(self.config.training.val_data_path, dtype=np.uint16)
+        else:
+            print("No validation data provided, splitting training data...")
+            split_idx = int(0.9 * len(train_data))
+            val_data = train_data[split_idx:]
+            train_data = train_data[:split_idx]
+            
+        self.train_data = train_data
+        self.val_data = val_data
+        print(self.train_data)
+        print(f"Training tokens: {len(self.train_data):,}")
+        print(f"Validation tokens: {len(self.val_data):,}")
+    
+    def setup_tokenizer(self) -> None:
+        """Setup the tokenizer."""
+        if self.config.tokenizer.vocab_path and self.config.tokenizer.merges_path:
+            print("Loading tokenizer from files...")
+            self.tokenizer = Tokenizer.from_files(
+                vocab_filepath=self.config.tokenizer.vocab_path,
+                merges_filepath=self.config.tokenizer.merges_path,
+                special_tokens=self.config.tokenizer.special_tokens
+            )
+        else:
+            print("Warning: No tokenizer files provided, using character-level tokenizer")
+            # Create a simple character-level tokenizer
+            vocab = {i: bytes([i]) for i in range(256)}
+            self.tokenizer = Tokenizer(vocab, [], self.config.tokenizer.special_tokens)
+        
+        # # Tokenize the data
+        # print("Tokenizing training data...")
+        # self.train_data = np.array(self.tokenizer.encode(self.train_text), dtype=np.int32)
+        # print("Tokenizing validation data...")
+        # self.val_data = np.array(self.tokenizer.encode(self.val_text), dtype=np.int32)
+        
+        # print(f"Training tokens: {len(self.train_data):,}")
+        # print(f"Validation tokens: {len(self.val_data):,}")
+        print(f"Vocabulary size: {len(self.tokenizer.vocab)}")
+    
+    def setup_model(self) -> None:
+        """Setup the model."""
+        print("Setting up model...")
+        
+        # Update vocab size if needed
+        actual_vocab_size = len(self.tokenizer.vocab)
+        if self.config.model.vocab_size != actual_vocab_size:
+            print(f"Updating vocab size from {self.config.model.vocab_size} to {actual_vocab_size}")
+            self.config.model.vocab_size = actual_vocab_size
+        
+        self.model = TransformerLM(
+            vocab_size=self.config.model.vocab_size,
+            context_length=self.config.model.context_length,
+            num_layers=self.config.model.num_layers,
+            d_model=self.config.model.d_model,
+            num_heads=self.config.model.num_heads,
+            d_ff=self.config.model.d_ff,
+            rope_theta=self.config.model.rope_theta
+        )
+        
+        self.model = self.model.to(self.device)
+        
+        # Compile model if requested
+        if self.config.training.compile_model:
+            print("Compiling model...")
+            self.model = torch.compile(self.model)
+        
+        # Count parameters
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print(f"Total parameters: {total_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
+    
+    def setup_optimizer(self) -> None:
+        """Setup optimizer and scheduler."""
+        print(f"Setting up {self.config.optimizer.name} optimizer...")
+        
+        if self.config.optimizer.name.lower() == "adamw":
+            self.optimizer = AdamW(
+                self.model.parameters(),
+                lr=self.config.optimizer.lr,
+                betas=self.config.optimizer.betas,
+                eps=self.config.optimizer.eps,
+                weight_decay=self.config.optimizer.weight_decay
+            )
+        elif self.config.optimizer.name.lower() == "sgd":
+            self.optimizer = SGD(
+                self.model.parameters(),
+                lr=self.config.optimizer.lr
+            )
+        else:
+            raise ValueError(f"Unknown optimizer: {self.config.optimizer.name}")
+    
+    def get_learning_rate(self, iteration: int) -> float:
+        """Get learning rate for current iteration."""
+        if not self.config.scheduler.use_scheduler:
+            return self.config.optimizer.lr
+        
+        return learning_rate_cosine(
+            t=iteration,
+            max_learning_rate=self.config.scheduler.max_learning_rate,
+            min_learning_rate=self.config.scheduler.min_learning_rate,
+            warmup_iters=self.config.scheduler.warmup_iters,
+            cosine_cycle_iters=self.config.scheduler.cosine_cycle_iters
+        )
+    
+    def update_learning_rate(self, lr: float) -> None:
+        """Update optimizer learning rate."""
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+    
+    @torch.no_grad()
+    def estimate_loss(self) -> Dict[str, float]:
+        """Estimate loss on train and validation sets."""
+        self.model.eval()
+        losses = {}
+        
+        for split, data in [('train', self.train_data), ('val', self.val_data)]:
+            total_loss = 0.0
+            for _ in range(self.config.training.eval_iters):
+                x, y = get_batch(data, self.config.training.batch_size, 
+                                self.config.model.context_length, str(self.device))
+                
+                with torch.autocast(device_type=self.device.type, dtype=self.dtype):
+                    logits = self.model(x)
+                    loss = cross_entropy(
+                        logits.view(-1, logits.size(-1)), 
+                        y.view(-1)
+                    )
+                
+                total_loss += loss.item()
+            
+            losses[split] = total_loss / self.config.training.eval_iters
+        
+        self.model.train()
+        return losses
+    
+    def save_checkpoint(self, iteration: int, is_best: bool = False) -> None:
+        """Save model checkpoint."""
+        # Save regular checkpoint
+        checkpoint_path = self.checkpoint_dir / f"checkpoint_{iteration}.pt"
+        
+        save_checkpoint(self.model, self.optimizer, iteration, checkpoint_path)
+        # checkpoint = {
+        #     'iteration': iteration,
+        #     'model_state_dict': self.model.state_dict(),
+        #     'optimizer_state_dict': self.optimizer.state_dict(),
+        #     'config': self.config,
+        #     'best_val_loss': self.best_val_loss,
+        # }
+        
+        # torch.save(checkpoint, checkpoint_path)
+        
+        # # Save latest checkpoint
+        # latest_path = self.checkpoint_dir / "latest.pt"
+        # torch.save(checkpoint, latest_path)
+        
+        # # Save best checkpoint
+        # if is_best:
+        #     best_path = self.checkpoint_dir / "best.pt"
+        #     torch.save(checkpoint, best_path)
+        
+        print(f"Checkpoint saved: {checkpoint_path}")
+    
+    def load_checkpoint(self, checkpoint_path: str) -> None:
+        """Load model checkpoint."""
+        self.current_iter = load_checkpoint(checkpoint_path, self.model, self.optimizer)
+        print(f"Loaded checkpoint from iteration {self.current_iter}")
+    
+    def log_metrics(self, metrics: Dict[str, Any], iteration: int):
+        """Log metrics to wandb."""
+        
+        # Log to wandb
+        if self.use_wandb:
+            import wandb
+            wandb.log(metrics, step=iteration)
+    
+    def generate_sample(self, prompt: str = "The", max_tokens: int = 100) -> str:
+        """Generate a sample text for monitoring."""
+        try:
+            return generate_text(
+                model=self.model,
+                tokenizer=self.tokenizer,
+                prompt=prompt,
+                context_length=self.config.model.context_length,
+                max_tokens=max_tokens,
+                temperature=0.8,
+                top_k=50,
+                device=self.device
+            )
+        except Exception as e:
+            return f"Generation failed: {str(e)}"
+    
+    def train(self) -> None:
+        """Main training loop."""
+        print("Starting training...")
+        print(f"Training for {self.config.training.max_iters:,} iterations")
+        
+        self.model.train()
+        start_time = time.time()
+        
+        for iteration in range(self.current_iter, self.config.training.max_iters):
+            self.current_iter = iteration
+            
+            # Update learning rate
+            lr = self.get_learning_rate(iteration)
+            self.update_learning_rate(lr)
+            
+            # Get batch
+            x, y = get_batch(
+                self.train_data, 
+                self.config.training.batch_size,
+                self.config.model.context_length, 
+                str(self.device)
+            )
+            
+            # Forward pass
+            with torch.autocast(device_type=self.device.type, dtype=self.dtype):
+                logits = self.model(x)
+                loss = cross_entropy(
+                    logits.view(-1, logits.size(-1)), 
+                    y.view(-1)
+                )
+            
+            # Backward pass
+            self.optimizer.zero_grad()
+            loss.backward()
+            
+            # Gradient clipping
+            if self.config.training.gradient_clip_val > 0:
+                gradient_clipping(
+                    self.model.parameters(), 
+                    self.config.training.gradient_clip_val
+                )
+            
+            self.optimizer.step()
+            
+            # Logging
+            if iteration % self.config.training.log_interval == 0:
+                elapsed = time.time() - start_time
+                tokens_per_sec = (iteration * self.config.training.batch_size * 
+                                self.config.model.context_length) / elapsed
+                
+                metrics = {
+                    'train/loss': loss.item(),
+                    'train/lr': lr,
+                    'train/tokens_per_sec': tokens_per_sec,
+                }
+                
+                self.log_metrics(metrics, iteration)
+                
+                print(f"Iter {iteration:6d} | Loss: {loss.item():.4f} | "
+                      f"LR: {lr:.2e} | Tokens/sec: {tokens_per_sec:.0f}")
+            
+            # Evaluation
+            if iteration % self.config.training.eval_interval == 0 and iteration > 0:
+                losses = self.estimate_loss()
+                
+                # Check if this is the best model
+                is_best = losses['val'] < self.best_val_loss
+                if is_best:
+                    self.best_val_loss = losses['val']
+                
+                metrics = {
+                    'eval/train_loss': losses['train'],
+                    'eval/val_loss': losses['val'],
+                    'eval/best_val_loss': self.best_val_loss,
+                }
+                
+                self.log_metrics(metrics, iteration)
+                
+                print(f"Iter {iteration:6d} | Train Loss: {losses['train']:.4f} | "
+                      f"Val Loss: {losses['val']:.4f} | Best: {self.best_val_loss:.4f}")
+                
+                # Generate sample text
+                sample = self.generate_sample()
+                print(f"Sample: {sample}")
+                
+                # Save checkpoint if best
+                if is_best:
+                    self.save_checkpoint(iteration, is_best=True)
+            
+            # Save checkpoint
+            if iteration % self.config.training.save_interval == 0 and iteration > 0:
+                self.save_checkpoint(iteration)
+        
+        print("Training completed!")
+        self.save_checkpoint(self.config.training.max_iters)
+        
+        if self.use_wandb:
+            import wandb
+            wandb.finish()
+
+def parse_cli_overrides(argv) -> dict:
+    overrides = {}
+    for arg in argv:
+        if "=" not in arg:
+            continue
+        key, val = arg.split("=", 1)
+        if key not in ("config", "resume"):
+            try:
+                val = eval(val)  # convert to correct type (int, float, bool, etc.)
+            except:
+                pass
+            overrides[key] = val
+    return overrides
+
+
+def apply_override(cfg_obj: Any, key_path: str, value: Any) -> None:
+    """Recursively apply override like 'model.d_model=1024'."""
+    keys = key_path.split('.')
+    current = cfg_obj
+    for key in keys[:-1]:
+        current = getattr(current, key)
+    setattr(current, keys[-1], value)
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Train LLM from scratch")
+    parser.add_argument("--config", type=str, required=True, help="Path to config file")
+    parser.add_argument("--resume", type=str, help="Path to checkpoint to resume from")
+    
+    args = parser.parse_args()
+    
+    # Load configuration
+    config = ConfigManager.load_config(args.config)
+    
+    # Create trainer
+    trainer = Trainer(config)
+    
+    # Resume from checkpoint if provided
+    if args.resume:
+        trainer.load_checkpoint(args.resume)
+    
+    # Start training
+    trainer.train()
+
+
+if __name__ == "__main__":
+    main()

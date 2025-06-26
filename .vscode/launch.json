@@ -5,6 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.train",
+            "args": ["--config","configs/baseline.yaml"]
+        },
+        {
             "name": "BPE",
             "type": "debugpy",
             "request": "launch",

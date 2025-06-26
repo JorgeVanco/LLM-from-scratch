@@ -1,12 +1,11 @@
 from src.tokenizer import Tokenizer
-from src.model import TransformerLM
 from src.utils import softmax
 import torch
 
 
 @torch.inference_mode()
 def generate_text(
-    model: TransformerLM,
+    model,
     tokenizer: Tokenizer,
     prompt: str,
     context_length: int,
@@ -45,7 +44,3 @@ def generate_text(
         tokens.append(token)
 
     return tokenizer.decode(tokens)
-
-if __name__ == "__main__":
-    model = TransformerLM(256, 20, 1, 32, 1, 32, 1000.0)
-    print(generate_text(model, Tokenizer({i: chr(i).encode("utf-8") for i in range(256)}, [], ["<|endoftext|>"]), "hello, ", 20, 256, 1000, 3))
