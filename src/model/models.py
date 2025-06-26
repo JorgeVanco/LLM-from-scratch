@@ -211,7 +211,7 @@ class MultiHeadSelfAttention(nn.Module):
             queries,
             keys,
             values,
-            ~torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool(),
+            ~torch.triu(torch.ones(seq_len, seq_len, device=x.device), diagonal=1).bool(),
         )
 
         values = rearrange(
