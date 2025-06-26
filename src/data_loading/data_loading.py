@@ -12,7 +12,7 @@ def get_batch(
     while len(inputs) < batch_size:
         i = random.randint(0, max_index)
 
-        inputs.append(torch.LongTensor(dataset[i: i + context_length], device=device))
-        targets.append(torch.LongTensor(dataset[i + 1: i + context_length + 1], device=device))
+        inputs.append(torch.tensor(dataset[i: i + context_length], dtype=torch.long, device=device))
+        targets.append(torch.tensor(dataset[i + 1: i + context_length + 1], dtype=torch.long, device=device))
         
     return torch.stack(inputs), torch.stack(targets)
