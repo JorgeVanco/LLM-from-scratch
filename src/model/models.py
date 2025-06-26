@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange, einsum
 from jaxtyping import Float, Int
+from src.utils import softmax
 
 
 class Linear(nn.Module):
@@ -119,15 +120,6 @@ class RotaryPositionalEmbedding(nn.Module):
             x, position_matrices, "... seq k d1, ... seq k d2 d1 -> ... seq k d2"
         )
         return rearrange(applied_rotary, "... seq k d2 -> ... seq (k d2)")
-
-
-def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
-    max_x = x.amax(dim=dim, keepdim=True)
-    exponentiated_x = (x - max_x).exp()
-
-    sftmax = exponentiated_x / exponentiated_x.sum(dim=dim, keepdim=True)
-
-    return sftmax
 
 
 def scaled_dot_product_attention(
@@ -262,26 +254,40 @@ class TransformerBlock(nn.Module):
 
 
 class TransformerLM(nn.Module):
-    def __init__(self, vocab_size: int, context_length: int, num_layers: int, d_model: int, num_heads: int, d_ff: int, rope_theta: float) -> None:
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        num_layers: int,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: float,
+    ) -> None:
         super().__init__()
-        
+
         assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
-        
+
         self.token_embeddings = Embedding(vocab_size, d_model)
-        
+
         d_k = d_model // num_heads
         rope = RotaryPositionalEmbedding(rope_theta, d_k, context_length)
-        
+
         self.layers = nn.ModuleList(
             TransformerBlock(d_model, num_heads, d_ff, rope) for _ in range(num_layers)
         )
         self.ln_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
-        
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.token_embeddings(x)
         for layer in self.layers:
             x = layer(x)
-        x = self.ln_final(x) 
+        x = self.ln_final(x)
         x = self.lm_head(x)
         return x
+
+
+model = TransformerLM(50257, 1024, 48, 1600, 25, 6400, 1000)
+# model = TransformerLM(100, 10, 3, 32, 2, 64, 1000)
+print(sum(p.numel() for p in model.parameters()))
