@@ -4,12 +4,17 @@
     // Para más información, visite: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
         {
             "name": "BPE",
             "type": "debugpy",
             "request": "launch",
             "module": "src.tokenizer.bpe"
+        },
+        {
+            "name": "generate text",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.utils.generate_text"
         }
     ]
 }

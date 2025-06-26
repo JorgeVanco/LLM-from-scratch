@@ -287,7 +287,7 @@ class TransformerLM(nn.Module):
         x = self.lm_head(x)
         return x
 
-
-model = TransformerLM(50257, 1024, 48, 1600, 25, 6400, 1000)
-# model = TransformerLM(100, 10, 3, 32, 2, 64, 1000)
-print(sum(p.numel() for p in model.parameters()))
+if __name__ == "__main__":
+    model = TransformerLM(50257, 1024, 48, 1600, 25, 6400, 1000)
+    # model = TransformerLM(100, 10, 3, 32, 2, 64, 1000)
+    print(sum(p.numel() for p in model.parameters()))

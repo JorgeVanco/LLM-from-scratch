@@ -9,26 +9,43 @@ def generate_text(
     model: TransformerLM,
     tokenizer: Tokenizer,
     prompt: str,
+    context_length: int,
     max_tokens: int,
     temperature: float | None = None,
     top_k: int | None = None,
+    eos: str | None = "<|endoftext|>",
     device: torch.device | None = None,
 ) -> str:
+    
     tokens = tokenizer.encode(prompt)
+    eos_id = tokenizer.encode(eos)[0] if eos is not None else None
+    
     for _ in range(max_tokens):
-        context = torch.LongTensor([tokens[-model.context_length :]], device=device)
-        output = model(context)
-
-        if temperature is not None and temperature > 0.0:
-            output /= temperature
-
-        output = softmax(output, dim=-1)
+        context = torch.LongTensor([tokens[-context_length :]], device=device)
+        logits = model(context)
+        logits = logits[:, -1, :]
 
         if top_k is not None:
-            top = output.topk(top_k, dim=-1)
+            top_logits, _ = logits.topk(top_k, dim=-1)
+            min_val = top_logits[:, -1]
+            logits = torch.where(logits < min_val, -torch.inf, logits)
+            
+        if temperature is not None and temperature > 0.0:
+            logits /= temperature
+        
+        if temperature == 0.0:
+            token = logits.argmax(dim=-1)
+        else:
+            probs = softmax(logits, dim=-1)
+            token = torch.multinomial(probs, 1).item()
 
-        token = torch.multinomial(output, 1).item()
+        if token == eos_id:
+            break
 
         tokens.append(token)
 
     return tokenizer.decode(tokens)
+
+if __name__ == "__main__":
+    model = TransformerLM(256, 20, 1, 32, 1, 32, 1000.0)
+    print(generate_text(model, Tokenizer({i: chr(i).encode("utf-8") for i in range(256)}, [], ["<|endoftext|>"]), "hello, ", 20, 256, 1000, 3))
