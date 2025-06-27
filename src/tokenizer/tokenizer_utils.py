@@ -1,10 +1,11 @@
 import os
+import json
 from typing import BinaryIO
 import regex as re
 
 def find_chunk_boundaries(
-    file: BinaryIO, 
-    desired_num_chunks: int, 
+    file: BinaryIO,
+    desired_num_chunks: int,
     split_special_token: bytes
 ) -> list[int]:
     """
@@ -63,18 +64,33 @@ def pretokenize_chunk(input_path: str, start: int, end: int, special_tokens: lis
     byte_text = []
     for t in splitted_text:
         pretokenized_text = re.finditer(pattern, t)
-        byte_text.extend(tuple(c.encode("utf-8") for c in m.group()) for m in pretokenized_text)
+        byte_text.extend(tuple(bytes([b]) for b in m.group().encode("utf-8")) for m in pretokenized_text)
     return byte_text
 
-# ## Usage
-# num_processes = 4  # Number of processes to use for parallel processing
-# with open("data/corpus.en", "rb") as f:
-#     boundaries = find_chunk_boundaries(
-#         f, num_processes, "<|endoftext|>".encode("utf-8"))
-#     print("Chunk boundaries:", boundaries)
-#     # The following is a serial implementation, but you can parallelize this 
-#     # by sending each start/end pair to a set of processes.
-#     for start, end in zip(boundaries[:-1], boundaries[1:]):
-#         f.seek(start)
-#         chunk = f.read(end - start).decode("utf-8", errors="ignore")
-#         # Run pre-tokenization on your chunk and store the counts for each pre-token
+def save_bpe_vocab(output_dir: str, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]]) -> None:
+    os.makedirs(output_dir, exist_ok=True)
+    
+    with open(os.path.join(output_dir, "merges.txt"), "w", encoding="utf-8") as file:
+        for a, b in merges:
+            # Convert bytes to string, replacing spaces with Ġ
+            a_str = a.decode('utf-8', errors='replace').replace(' ', 'Ġ')
+            b_str = b.decode('utf-8', errors='replace').replace(' ', 'Ġ')
+            file.write(f"{a_str} {b_str}\n")
+    
+    # Save vocab.json
+    vocab_dict = {}
+    for token_id, token_bytes in vocab.items():
+        # Convert bytes to string representation for JSON
+        try:
+            # Try to decode as UTF-8 first
+            token_str = token_bytes.decode('utf-8').replace(' ', 'Ġ')
+        except UnicodeDecodeError:
+            # For non-UTF-8 bytes, use byte escape sequences
+            token_str = ''.join(f'\\x{b:02x}' if b < 32 or b > 126 else chr(b) for b in token_bytes)
+            token_str = token_str.replace(' ', 'Ġ')
+        
+        vocab_dict[token_str] = token_id
+    with open(os.path.join(output_dir, "vocab.json"), "w", encoding="utf-8") as file:
+        json.dump(vocab_dict, file, ensure_ascii=False, indent=2)
+
+    return vocab_dict, merges

@@ -1,9 +1,7 @@
-import json
-import os
-import regex as re
 from collections import defaultdict
-from .tokenizer_utils import find_chunk_boundaries, pretokenize_chunk
+from .tokenizer_utils import find_chunk_boundaries, pretokenize_chunk, save_bpe_vocab
 import multiprocessing
+from tqdm import tqdm
 
 class BPE:
     def __init__(self) -> None:
@@ -67,7 +65,7 @@ class BPE:
         chunks = list(zip(chunk_boundaries[:-1], chunk_boundaries[1:]))
         args = [(input_path, start, end, special_tokens, self.PATTERN) for start, end in chunks]
 
-        with multiprocessing.Pool(num_processes) as pool:
+        with multiprocessing.Pool(len(args)) as pool:
             pretokenized_texts = pool.starmap(pretokenize_chunk, args)
 
         byte_text = []
@@ -83,7 +81,7 @@ class BPE:
         # Initial count
         counts = self._get_counts(byte_text)
         
-        for _ in range(num_merges):
+        for _ in tqdm(range(num_merges), desc="Merges"):
             
             max_pair = self._get_max_pair(counts)
             
@@ -102,34 +100,7 @@ class BPE:
                 current_vocab_size += 1
         
         return vocab, merges
-    
-def save_bpe_vocab(output_dir: str, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]]) -> None:
-    os.makedirs(output_dir, exist_ok=True)
-    
-    with open(os.path.join(output_dir, "merges.txt"), "w", encoding="utf-8") as file:
-        for a, b in merges:
-            # Convert bytes to string, replacing spaces with Ġ
-            a_str = a.decode('utf-8', errors='replace').replace(' ', 'Ġ')
-            b_str = b.decode('utf-8', errors='replace').replace(' ', 'Ġ')
-            file.write(f"{a_str} {b_str}\n")
-    
-    # Save vocab.json
-    vocab_dict = {}
-    for token_id, token_bytes in vocab.items():
-        # Convert bytes to string representation for JSON
-        try:
-            # Try to decode as UTF-8 first
-            token_str = token_bytes.decode('utf-8').replace(' ', 'Ġ')
-        except UnicodeDecodeError:
-            # For non-UTF-8 bytes, use byte escape sequences
-            token_str = ''.join(f'\\x{b:02x}' if b < 32 or b > 126 else chr(b) for b in token_bytes)
-            token_str = token_str.replace(' ', 'Ġ')
-        
-        vocab_dict[token_str] = token_id
-    with open(os.path.join(output_dir, "vocab.json"), "w", encoding="utf-8") as file:
-        json.dump(vocab_dict, file, ensure_ascii=False, indent=2)
 
-    return vocab_dict, merges
     
 def train_bpe(input_path: str, output_dir: str, vocab_size: int, special_tokens: list[str]) -> None:
     bpe = BPE()
@@ -139,7 +110,7 @@ def train_bpe(input_path: str, output_dir: str, vocab_size: int, special_tokens:
 if __name__ == "__main__":
     import time
     start_time = time.time()
-    train_bpe("data/corpus.en", "tokenizer/corpus/500", 500, ["<|endoftext|>"])
+    train_bpe("data/test.txt", "tokenizer/corpus/500", 289, ["<|endoftext|>"])
     end_time = time.time()
     print(f"Training completed in {end_time - start_time:.2f} seconds")
     # bpe = BPE()
