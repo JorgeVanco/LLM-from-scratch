@@ -22,13 +22,78 @@ class Tokenizer:
         with open(vocab_filepath, "r", encoding="utf-8") as file:
             vocab = json.load(file)
 
-        return {int(k): v.encode("utf-8") for k, v in vocab.items()}
+        return Tokenizer._convert_vocab_to_bytes(vocab)
+    
+    @staticmethod
+    def _convert_vocab_to_bytes(vocab: dict[str, int]) -> dict[int, bytes]:
+        """
+        Convert string-based vocab back to bytes format.
+        
+        Args:
+            vocab: Dictionary mapping token strings to IDs
+            
+        Returns:
+            Dictionary mapping token IDs to byte sequences
+        """
+        byte_vocab = {}
+        for token_str, token_id in vocab.items():
+            # Convert back from Ġ to space
+            token_str = token_str.replace('Ġ', ' ')
+            
+            # Handle byte escape sequences
+            if '\\x' in token_str:
+                # Parse hex escape sequences
+                token_bytes = bytearray()
+                i = 0
+                while i < len(token_str):
+                    if i < len(token_str) - 3 and token_str[i:i+2] == '\\x':
+                        hex_str = token_str[i+2:i+4]
+                        token_bytes.append(int(hex_str, 16))
+                        i += 4
+                    else:
+                        token_bytes.append(ord(token_str[i]))
+                        i += 1
+                byte_vocab[token_id] = bytes(token_bytes)
+            else:
+                # Regular UTF-8 encoding
+                byte_vocab[token_id] = token_str.encode('utf-8')
+        
+        return byte_vocab
     
     @staticmethod
     def _load_merges(merges_filepath: str) -> list[tuple[bytes, bytes]]:
+        merges: list[tuple[str, str]] = []
         with open(merges_filepath, "r", encoding="utf-8") as file:
-            merges = [tuple(line.rstrip().split(" ")) for line in file.readlines()]
-        return [(a.encode("utf-8"), b.encode("utf-8")) for a, b in merges]
+            for line in file:
+                if line.strip():
+                    parts = line.strip().split(' ', 1)
+                    if len(parts) == 2:
+                        merges.append((parts[0], parts[1]))
+        return Tokenizer._convert_merges_to_bytes(merges)
+    
+    @staticmethod
+    def _convert_merges_to_bytes(merges: list[tuple[str, str]]) -> list[tuple[bytes, bytes]]:
+        """
+        Convert string-based merges back to bytes format.
+        
+        Args:
+            merges: List of merge rules as (token1_str, token2_str) pairs
+            
+        Returns:
+            List of merge rules as (token1_bytes, token2_bytes) pairs
+        """
+        byte_merges = []
+        for a_str, b_str in merges:
+            # Convert back from Ġ to space
+            a_str = a_str.replace('Ġ', ' ')
+            b_str = b_str.replace('Ġ', ' ')
+            
+            # Convert to bytes
+            a_bytes = a_str.encode('utf-8')
+            b_bytes = b_str.encode('utf-8')
+            byte_merges.append((a_bytes, b_bytes))
+        
+        return byte_merges
     
     @classmethod
     def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str] | None = None) -> None:

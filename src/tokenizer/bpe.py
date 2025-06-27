@@ -1,3 +1,5 @@
+import json
+import os
 import regex as re
 from collections import defaultdict
 
@@ -49,7 +51,7 @@ class BPE:
                     new_word.append(word[j])
                     j += 1
             
-            byte_text[i] = new_word
+            byte_text[i] = tuple(new_word)
             
         return byte_text
     
@@ -100,20 +102,59 @@ class BPE:
         
         return vocab, merges
     
-if __name__ == "__main__":
+def save_bpe_vocab(output_dir: str, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]]) -> None:
+    os.makedirs(output_dir, exist_ok=True)
+    
+    with open(os.path.join(output_dir, "merges.txt"), "w", encoding="utf-8") as file:
+        for a, b in merges:
+            # Convert bytes to string, replacing spaces with Ġ
+            a_str = a.decode('utf-8', errors='replace').replace(' ', 'Ġ')
+            b_str = b.decode('utf-8', errors='replace').replace(' ', 'Ġ')
+            file.write(f"{a_str} {b_str}\n")
+    
+    # Save vocab.json
+    vocab_dict = {}
+    for token_id, token_bytes in vocab.items():
+        # Convert bytes to string representation for JSON
+        try:
+            # Try to decode as UTF-8 first
+            token_str = token_bytes.decode('utf-8').replace(' ', 'Ġ')
+        except UnicodeDecodeError:
+            # For non-UTF-8 bytes, use byte escape sequences
+            token_str = ''.join(f'\\x{b:02x}' if b < 32 or b > 126 else chr(b) for b in token_bytes)
+            token_str = token_str.replace(' ', 'Ġ')
+        
+        vocab_dict[token_str] = token_id
+    with open(os.path.join(output_dir, "vocab.json"), "w", encoding="utf-8") as file:
+        json.dump(vocab_dict, file, ensure_ascii=False, indent=2)
+
+    return vocab_dict, merges
+    
+def train_bpe(input_path: str, output_dir: str, vocab_size: int, special_tokens: list[str]) -> None:
     bpe = BPE()
+    vocab, merges = bpe.train(input_path, vocab_size, special_tokens)
+    save_bpe_vocab(output_dir, vocab, merges)
+    
+if __name__ == "__main__":
     import time
-    import cProfile
     start_time = time.time()
-    with cProfile.Profile() as pr:
-        pr.enable()
-        # Train the BPE tokenizer on a sample corpus
-        # Adjust the path to your corpus file as needed
-        vocab, merges = bpe.train("data/corpus.en", 500, ["<|endoftext|>"])
+    train_bpe("data/corpus.en", "tokenizer/corpus/500", 500, ["<|endoftext|>"])
     end_time = time.time()
-    pr.disable()
-    pr.print_stats(sort='time')
     print(f"Training completed in {end_time - start_time:.2f} seconds")
-    # Print the vocabulary and merges
-    # print("Vocabulary:", vocab)
-    # print("Merges:", merges)
+    # bpe = BPE()
+    # import time
+    # import cProfile
+    # start_time = time.time()
+    # with cProfile.Profile() as pr:
+    #     pr.enable()
+    #     # Train the BPE tokenizer on a sample corpus
+    #     # Adjust the path to your corpus file as needed
+    #     # "data/tinystories_sample_5M.txt"
+    #     vocab, merges = bpe.train("data/corpus.en", 500, ["<|endoftext|>"])
+    # end_time = time.time()
+    # pr.disable()
+    # pr.print_stats(sort='time')
+    # print(f"Training completed in {end_time - start_time:.2f} seconds")
+    # # Print the vocabulary and merges
+    # # print("Vocabulary:", vocab)
+    # # print("Merges:", merges)

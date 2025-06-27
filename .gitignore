@@ -13,3 +13,4 @@ data/
 vocab/
 wandb/
 checkpoints/
+/tokenizer/
