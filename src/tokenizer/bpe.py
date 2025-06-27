@@ -102,9 +102,9 @@ class BPE:
         return vocab, merges
 
     
-def train_bpe(data_path: str, output_dir: str, vocab_size: int, special_tokens: list[str]) -> None:
+def train_bpe(data_path: str, output_dir: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4) -> None:
     bpe = BPE()
-    vocab, merges = bpe.train(data_path, vocab_size, special_tokens)
+    vocab, merges = bpe.train(data_path, vocab_size, special_tokens, num_processes)
     save_bpe_vocab(output_dir, vocab, merges)
     
 if __name__ == "__main__":

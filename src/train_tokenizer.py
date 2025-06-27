@@ -37,6 +37,13 @@ def parse_args() -> argparse.Namespace:
         help="List of special tokens to include in vocabulary"
     )
     
+    parser.add_argument(
+        "--num-processes",
+        type=int,
+        default=4,
+        help="Number of processes for parallelization"
+    )
+    
     return parser.parse_args()
 
 def validate_args(args: argparse.Namespace) -> None:
@@ -76,7 +83,8 @@ def main() -> None:
             data_path=args.data_path,
             output_dir=args.output_dir,
             vocab_size=args.vocab_size,
-            special_tokens=args.special_tokens
+            special_tokens=args.special_tokens,
+            num_processes=args.num_processes
         )
         print("\nTraining completed successfully!")
         print(f"Tokenizer saved to: {args.output_dir}")
