@@ -3,6 +3,8 @@ import json
 from typing import BinaryIO
 import regex as re
 
+PATTERN = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
+
 def find_chunk_boundaries(
     file: BinaryIO,
     desired_num_chunks: int,
@@ -51,7 +53,7 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
-def pretokenize_chunk(input_path: str, start: int, end: int, special_tokens: list[str], pattern: str) -> list[tuple[bytes]]:
+def pretokenize_chunk(input_path: str, start: int, end: int, special_tokens: list[str]) -> list[tuple[bytes]]:
     with open(input_path, "rb") as file:
         file.seek(start)
         chunk = file.read(end - start).decode("utf-8", errors="ignore")
@@ -63,7 +65,7 @@ def pretokenize_chunk(input_path: str, start: int, end: int, special_tokens: lis
 
     byte_text = []
     for t in splitted_text:
-        pretokenized_text = re.finditer(pattern, t)
+        pretokenized_text = re.finditer(PATTERN, t)
         byte_text.extend(tuple(bytes([b]) for b in m.group().encode("utf-8")) for m in pretokenized_text)
     return byte_text
 
