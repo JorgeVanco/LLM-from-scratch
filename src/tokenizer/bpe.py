@@ -2,6 +2,8 @@ import json
 import os
 import regex as re
 from collections import defaultdict
+from .tokenizer_utils import find_chunk_boundaries, pretokenize_chunk
+import multiprocessing
 
 class BPE:
     def __init__(self) -> None:
@@ -56,22 +58,21 @@ class BPE:
         return byte_text
     
     
-    def train(self, input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    def train(self, input_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
         
         assert vocab_size > 256, "Vocabulary size must be greater than 256"
-        with open(input_path, "r", encoding="utf-8") as file:
-            # chunk_boundaries = find_chunk_boundaries(file, desired_num_chunks, split_special_tokens)
-            text = file.read()
-
-        if special_tokens:
-            splitted_text = re.split("|".join(re.escape(t) for t in special_tokens), text)
-        else:
-            splitted_text = [text]
+        with open(input_path, "rb") as file:
+            chunk_boundaries = find_chunk_boundaries(file, num_processes, "<|endoftext|>".encode("utf-8"))
             
-        byte_text: list[tuple[bytes]] = []
-        for t in splitted_text:
-            pretokenized_text = re.finditer(self.PATTERN, t)
-            byte_text.extend(tuple(c.encode("utf-8") for c in pretoken.group()) for pretoken in pretokenized_text)
+        chunks = list(zip(chunk_boundaries[:-1], chunk_boundaries[1:]))
+        args = [(input_path, start, end, special_tokens, self.PATTERN) for start, end in chunks]
+
+        with multiprocessing.Pool(num_processes) as pool:
+            pretokenized_texts = pool.starmap(pretokenize_chunk, args)
+
+        byte_text = []
+        for pretokenized_text in pretokenized_texts:
+            byte_text.extend(pretokenized_text)
 
         vocab: dict[int,bytes] = {i: bytes([i]) for i in range(256)}
         current_vocab_size: int = len(vocab)
@@ -150,7 +151,7 @@ if __name__ == "__main__":
     #     # Train the BPE tokenizer on a sample corpus
     #     # Adjust the path to your corpus file as needed
     #     # "data/tinystories_sample_5M.txt"
-    #     vocab, merges = bpe.train("data/corpus.en", 500, ["<|endoftext|>"])
+    #     vocab, merges = bpe.train("data/tinystories_sample_5M.txt", 500, ["<|endoftext|>"])
     # end_time = time.time()
     # pr.disable()
     # pr.print_stats(sort='time')
