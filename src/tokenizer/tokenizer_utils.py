@@ -67,30 +67,53 @@ def pretokenize_chunk(input_path: str, start: int, end: int, special_tokens: lis
         byte_text.extend(tuple(bytes([b]) for b in m.group().encode("utf-8")) for m in pretokenized_text)
     return byte_text
 
+
 def save_bpe_vocab(output_dir: str, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]]) -> None:
     os.makedirs(output_dir, exist_ok=True)
     
     with open(os.path.join(output_dir, "merges.txt"), "w", encoding="utf-8") as file:
         for a, b in merges:
-            # Convert bytes to string, replacing spaces with Ġ
-            a_str = a.decode('utf-8', errors='replace').replace(' ', 'Ġ')
-            b_str = b.decode('utf-8', errors='replace').replace(' ', 'Ġ')
+            a_str = bytes_to_escaped_str(a)
+            b_str = bytes_to_escaped_str(b)
             file.write(f"{a_str} {b_str}\n")
     
     # Save vocab.json
     vocab_dict = {}
     for token_id, token_bytes in vocab.items():
         # Convert bytes to string representation for JSON
-        try:
-            # Try to decode as UTF-8 first
-            token_str = token_bytes.decode('utf-8').replace(' ', 'Ġ')
-        except UnicodeDecodeError:
-            # For non-UTF-8 bytes, use byte escape sequences
-            token_str = ''.join(f'\\x{b:02x}' if b < 32 or b > 126 else chr(b) for b in token_bytes)
-            token_str = token_str.replace(' ', 'Ġ')
+        token_str = bytes_to_escaped_str(token_bytes)
         
         vocab_dict[token_str] = token_id
     with open(os.path.join(output_dir, "vocab.json"), "w", encoding="utf-8") as file:
         json.dump(vocab_dict, file, ensure_ascii=False, indent=2)
 
     return vocab_dict, merges
+
+
+def bytes_to_escaped_str(b: bytes) -> str:
+        return ''.join(f'\\x{byte:02x}' if byte < 32 or byte > 126 else chr(byte) for byte in b).replace(' ', 'Ġ')
+    
+
+def parse_escaped_str(token_str: str) -> bytes:
+    
+    # Convert back from Ġ to space
+    token_str = token_str.replace('Ġ', ' ')
+    
+    # Handle byte escape sequences
+    if '\\x' in token_str:
+        # Parse hex escape sequences
+        token_bytes = bytearray()
+        i = 0
+        while i < len(token_str):
+            if i < len(token_str) - 3 and token_str[i:i+2] == '\\x':
+                hex_str = token_str[i+2:i+4]
+                token_bytes.append(int(hex_str, 16))
+                i += 4
+            else:
+                token_bytes.append(ord(token_str[i]))
+                i += 1
+        return bytes(token_bytes)
+    else:
+        # Regular UTF-8 encoding
+        return token_str.encode('utf-8')
+    

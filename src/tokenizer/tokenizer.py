@@ -1,6 +1,7 @@
 from typing import Iterable, Iterator
 import regex as re
 import json
+from .tokenizer_utils import parse_escaped_str
 
 class Tokenizer:
     def __init__(self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: None | list = None) -> None:
@@ -36,27 +37,8 @@ class Tokenizer:
             Dictionary mapping token IDs to byte sequences
         """
         byte_vocab = {}
-        for token_str, token_id in vocab.items():
-            # Convert back from Ġ to space
-            token_str = token_str.replace('Ġ', ' ')
-            
-            # Handle byte escape sequences
-            if '\\x' in token_str:
-                # Parse hex escape sequences
-                token_bytes = bytearray()
-                i = 0
-                while i < len(token_str):
-                    if i < len(token_str) - 3 and token_str[i:i+2] == '\\x':
-                        hex_str = token_str[i+2:i+4]
-                        token_bytes.append(int(hex_str, 16))
-                        i += 4
-                    else:
-                        token_bytes.append(ord(token_str[i]))
-                        i += 1
-                byte_vocab[token_id] = bytes(token_bytes)
-            else:
-                # Regular UTF-8 encoding
-                byte_vocab[token_id] = token_str.encode('utf-8')
+        for token_str, token_id in vocab.items():     
+            byte_vocab[token_id] = parse_escaped_str(token_str)
         
         return byte_vocab
     
@@ -84,13 +66,8 @@ class Tokenizer:
         """
         byte_merges = []
         for a_str, b_str in merges:
-            # Convert back from Ġ to space
-            a_str = a_str.replace('Ġ', ' ')
-            b_str = b_str.replace('Ġ', ' ')
-            
-            # Convert to bytes
-            a_bytes = a_str.encode('utf-8')
-            b_bytes = b_str.encode('utf-8')
+            a_bytes = parse_escaped_str(a_str)
+            b_bytes = parse_escaped_str(b_str)
             byte_merges.append((a_bytes, b_bytes))
         
         return byte_merges
