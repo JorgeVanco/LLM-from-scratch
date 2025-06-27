@@ -6,7 +6,6 @@ class BPE:
         self.PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
         
     def _get_counts(self, byte_text: list[list[bytes]]) -> dict[tuple[bytes], int]:
-        counts: dict[tuple[bytes], int] = dict()
         counts: defaultdict = defaultdict(int)
 
         for word in byte_text:
@@ -15,26 +14,46 @@ class BPE:
                 
         return counts
         
-    def _get_max_pair(self, byte_text: list[list[bytes]]) -> tuple[bytes, bytes]:
-        counts: dict[tuple[bytes], int] = self._get_counts(byte_text)
-                
-        max_pair = max(counts.items(), key=lambda x: (x[1], x[0]))[0]
-        return max_pair
+    def _get_max_pair(self, counts: dict[tuple[bytes], int]) -> tuple[bytes, bytes]:
+        return max(counts.items(), key=lambda x: (x[1], x[0]))[0]
 
-    def _apply_merges(self, byte_text: list[list[bytes]], merge: tuple[bytes]) -> list[bytes]:
+    def _apply_merges(self, byte_text: list[list[bytes]], merge: tuple[bytes], counts: dict[tuple[bytes], int]) -> list[bytes]:
+        a, b = merge
+        merged = a + b
+        
+        del counts[merge]
+        
         for i in range(len(byte_text)):
-            if merge[0] not in byte_text[i] or merge[1] not in byte_text[i]:
+            word = byte_text[i]
+            
+            if a not in word or b not in word:
                 continue
             
+            new_word = []
             j = 0
-            while j < len(byte_text[i]) - 1:    
-                word = byte_text[i]
-                a, b = word[j], word[j + 1]
-                if (a, b) == merge:
-                    byte_text[i] = tuple(word[:j] + (a + b, ) + word[j+2:])
-                j += 1
+            while j < len(word):
+                if j < len(word) - 1 and word[j] == a and word[j + 1] == b:
+                    new_word.append(merged)
+                    
+                    # Update counts
+                    if j + 1 < len(word) - 1:
+                        counts[(b, word[j + 2])] -= 1
+                        counts[(merged, word[j + 2])] += 1 
+                        
+                    if j >= 1:
+                        counts[(word[j - 1], a)] -= 1
+                        counts[(word[j - 1], merged)] += 1
+                    
+                    j += 2  # Skip both merged bytes
+                else:
+                    new_word.append(word[j])
+                    j += 1
+            
+            byte_text[i] = new_word
+            
         return byte_text
-
+    
+    
     def train(self, input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
         
         assert vocab_size > 256, "Vocabulary size must be greater than 256"
@@ -58,9 +77,12 @@ class BPE:
         
         num_merges: int = vocab_size - current_vocab_size - len(special_tokens)
         
+        # Initial count
+        counts = self._get_counts(byte_text)
+        
         for _ in range(num_merges):
             
-            max_pair = self._get_max_pair(byte_text)
+            max_pair = self._get_max_pair(counts)
             
             vocab[current_vocab_size] = b"".join(max_pair)
             merges.append(max_pair)
@@ -68,7 +90,7 @@ class BPE:
             current_vocab_size += 1
             
             if current_vocab_size < vocab_size:
-                byte_text = self._apply_merges(byte_text, max_pair)
+                byte_text = self._apply_merges(byte_text, max_pair, counts)
         
         # Add special tokens to the vocabulary
         for token in special_tokens:
