@@ -56,14 +56,14 @@ class BPE:
         return byte_text
     
     
-    def train(self, input_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    def train(self, data_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
         
         assert vocab_size > 256, "Vocabulary size must be greater than 256"
-        with open(input_path, "rb") as file:
+        with open(data_path, "rb") as file:
             chunk_boundaries = find_chunk_boundaries(file, num_processes, "<|endoftext|>".encode("utf-8"))
             
         chunks = list(zip(chunk_boundaries[:-1], chunk_boundaries[1:]))
-        args = [(input_path, start, end, special_tokens, self.PATTERN) for start, end in chunks]
+        args = [(data_path, start, end, special_tokens, self.PATTERN) for start, end in chunks]
 
         with multiprocessing.Pool(len(args)) as pool:
             pretokenized_texts = pool.starmap(pretokenize_chunk, args)
@@ -102,9 +102,9 @@ class BPE:
         return vocab, merges
 
     
-def train_bpe(input_path: str, output_dir: str, vocab_size: int, special_tokens: list[str]) -> None:
+def train_bpe(data_path: str, output_dir: str, vocab_size: int, special_tokens: list[str]) -> None:
     bpe = BPE()
-    vocab, merges = bpe.train(input_path, vocab_size, special_tokens)
+    vocab, merges = bpe.train(data_path, vocab_size, special_tokens)
     save_bpe_vocab(output_dir, vocab, merges)
     
 if __name__ == "__main__":
