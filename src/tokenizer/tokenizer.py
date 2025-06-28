@@ -137,7 +137,7 @@ class Tokenizer:
                         ]
                         tokenized_text.extend(self.cache[pretoken])
                     else:
-                        tokenized_text.extend(self.encoding_vocab[pretoken])
+                        tokenized_text.extend(self.encoding_vocab[pretoken[0]])
             else:
                 tokenized_text.append(self.encoding_vocab[split_text.encode("utf-8")])
 
