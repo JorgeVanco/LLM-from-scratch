@@ -13,6 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-path",
         type=str,
+        required=True,
         help="Path to text file for training"
     )
     

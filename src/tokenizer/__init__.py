@@ -1,2 +1,2 @@
-from .tokenizer import Tokenizer
+from .tokenizer import Tokenizer, load_tokenizer
 from .bpe import train_bpe

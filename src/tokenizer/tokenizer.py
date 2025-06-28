@@ -1,6 +1,8 @@
 from typing import Iterable, Iterator
 import regex as re
 import json
+import os
+from tqdm import tqdm
 from .tokenizer_utils import parse_escaped_str
 
 class Tokenizer:
@@ -109,10 +111,16 @@ class Tokenizer:
         return tokenized_text
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        for line in iterable:
+        for line in tqdm(iterable, desc="Encoding lines", unit="line"):
             for token in self.encode(line):
                 yield token
     
     def decode(self, ids: list[int]) -> str:
         decoded_bytes = b"".join(self.vocab[i] for i in ids if i in self.vocab)
         return decoded_bytes.decode("utf-8", errors="replace")
+    
+
+def load_tokenizer(tokenizer_dir:str, special_tokens: list[str] | None = None) -> Tokenizer:
+    vocab_filepath = os.path.join(tokenizer_dir, "vocab.json")
+    merges_filepath = os.path.join(tokenizer_dir, "merges.txt")
+    return Tokenizer.from_files(vocab_filepath, merges_filepath, special_tokens)
