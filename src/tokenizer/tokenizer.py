@@ -111,7 +111,7 @@ class Tokenizer:
         return tokenized_text
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        for line in tqdm(iterable, desc="Encoding lines", unit="line"):
+        for line in iterable:
             for token in self.encode(line):
                 yield token
     
