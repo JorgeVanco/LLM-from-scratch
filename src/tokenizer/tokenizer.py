@@ -117,27 +117,30 @@ class Tokenizer:
                         if pretoken in self.cache:
                             tokenized_text.extend(self.cache[pretoken])
                             continue
-
+                        original_pretoken=pretoken
                         for merge in self.merges:
                             if merge[0] not in pretoken or merge[1] not in pretoken:
                                 continue
+                            a, b = merge
+                            merged = a + b
                             j = 0
-
-                            while j < len(pretoken) - 1:
-                                a, b = pretoken[j], pretoken[j + 1]
-                                if (a, b) == merge:
-                                    pretoken = tuple(
-                                        pretoken[:j] + (a + b,) + pretoken[j + 2 :]
-                                    )
-                                j += 1
-                        self.cache[pretoken] = [
+                            new_word = []
+                            while j < len(pretoken):
+                                if j < len(pretoken) - 1 and pretoken[j] == a and pretoken[j + 1] == b:
+                                    new_word.append(merged)
+                                    j += 2
+                                else:
+                                    new_word.append(pretoken[j])
+                                    j += 1
+                            pretoken = tuple(new_word)
+                        self.cache[original_pretoken] = [
                             self.encoding_vocab[t]
                             for t in pretoken
                             if t in self.encoding_vocab
                         ]
-                        tokenized_text.extend(self.cache[pretoken])
+                        tokenized_text.extend(self.cache[original_pretoken])
                     else:
-                        tokenized_text.extend(self.encoding_vocab[pretoken[0]])
+                        tokenized_text.append(self.encoding_vocab[pretoken[0]])
             else:
                 tokenized_text.append(self.encoding_vocab[split_text.encode("utf-8")])
 
