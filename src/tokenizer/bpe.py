@@ -58,7 +58,8 @@ class BPE:
     def _get_pretoken_counts_parallel(self, data_path: str, special_tokens: list[str], num_processes: int = None):
         if num_processes is None:
             num_processes = multiprocessing.cpu_count()
-            
+            print(f"No specific number of processes provided. Using {num_processes} processes for parallel pre-tokenization.")
+
         with open(data_path, "rb") as file:
             chunk_boundaries = find_chunk_boundaries(file, num_processes, "<|endoftext|>".encode("utf-8"))
             

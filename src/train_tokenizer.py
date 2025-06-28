@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num-processes",
         type=int,
-        default=4,
+        default=None,
         help="Number of processes for parallelization"
     )
     
@@ -76,6 +76,7 @@ def main() -> None:
     print(f"Output directory: {args.output_dir}")
     print(f"Vocabulary size: {args.vocab_size:,}")
     print(f"Special tokens: {args.special_tokens}")
+    print(f"Num processes: {args.num_processes}")
     print("="*50)
     
     try:
