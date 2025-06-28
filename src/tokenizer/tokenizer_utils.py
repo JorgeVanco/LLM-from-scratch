@@ -2,6 +2,9 @@ import os
 import json
 from typing import BinaryIO
 import regex as re
+from collections import defaultdict
+
+PATTERN = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""")
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -51,21 +54,33 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
-def pretokenize_chunk(input_path: str, start: int, end: int, special_tokens: list[str], pattern: str) -> list[tuple[bytes]]:
+def pretokenize_chunk(args) -> list[tuple[bytes]]:
+    input_path: str
+    start: int
+    end: int
+    special_tokens: list[str]
+    
+    input_path, start, end, special_tokens = args
+    
+    pretoken_counts = defaultdict(int)
+    
     with open(input_path, "rb") as file:
         file.seek(start)
         chunk = file.read(end - start).decode("utf-8", errors="ignore")
 
-    if special_tokens:
-        splitted_text = re.split("|".join(re.escape(t) for t in special_tokens), chunk)
-    else:
-        splitted_text = [chunk]
+        if special_tokens:
+            text_segments = re.split("|".join(re.escape(t) for t in special_tokens), chunk)
+        else:
+            text_segments = [chunk]
 
-    byte_text = []
-    for t in splitted_text:
-        pretokenized_text = re.finditer(pattern, t)
-        byte_text.extend(tuple(bytes([b]) for b in m.group().encode("utf-8")) for m in pretokenized_text)
-    return byte_text
+        for segment in text_segments:
+            # if segment:
+            pretokenized_segment = re.finditer(PATTERN, segment)
+            for pretoken_match in pretokenized_segment:
+                pretoken = tuple(bytes([b]) for b in pretoken_match.group().encode("utf-8"))
+                pretoken_counts[pretoken] += 1
+            
+    return pretoken_counts
 
 
 def save_bpe_vocab(output_dir: str, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]]) -> None:

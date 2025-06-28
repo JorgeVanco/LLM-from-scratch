@@ -7,26 +7,25 @@ class BPE:
     def __init__(self) -> None:
         self.PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
         
-    def _get_counts(self, byte_text: list[list[bytes]]) -> dict[tuple[bytes], int]:
+    def _get_counts(self, pretoken_counts: defaultdict) -> dict[tuple[bytes], int]:
         counts: defaultdict = defaultdict(int)
-
-        for word in byte_text:
-            for i, j in zip(word, word[1:]):
-                counts[(i, j)] += 1
+        
+        for pretoken, count in pretoken_counts.items():
+            for i, j in zip(pretoken, pretoken[1:]):
+                counts[(i, j)] += count
                 
         return counts
         
     def _get_max_pair(self, counts: dict[tuple[bytes], int]) -> tuple[bytes, bytes]:
         return max(counts.items(), key=lambda x: (x[1], x[0]))[0]
 
-    def _apply_merges(self, byte_text: list[list[bytes]], merge: tuple[bytes], counts: dict[tuple[bytes], int]) -> list[bytes]:
+    def _apply_merges(self, pretoken_counts: defaultdict, merge: tuple[bytes], pair_counts: dict[tuple[bytes], int]) -> list[bytes]:
         a, b = merge
         merged = a + b
         
-        del counts[merge]
+        del pair_counts[merge]
         
-        for i in range(len(byte_text)):
-            word = byte_text[i]
+        for word, word_count in list(pretoken_counts.items()):
             
             if a not in word or b not in word:
                 continue
@@ -39,38 +38,52 @@ class BPE:
                     
                     # Update counts
                     if j + 1 < len(word) - 1:
-                        counts[(b, word[j + 2])] -= 1
-                        counts[(merged, word[j + 2])] += 1 
+                        pair_counts[(b, word[j + 2])] -= word_count
+                        pair_counts[(merged, word[j + 2])] += word_count 
                         
                     if j >= 1:
-                        counts[(word[j - 1], a)] -= 1
-                        counts[(word[j - 1], merged)] += 1
+                        pair_counts[(word[j - 1], a)] -= word_count
+                        pair_counts[(word[j - 1], merged)] += word_count
                     
                     j += 2  # Skip both merged bytes
                 else:
                     new_word.append(word[j])
                     j += 1
             
-            byte_text[i] = tuple(new_word)
+            del pretoken_counts[word]
+            if len(tuple(new_word)) > 1:
+                pretoken_counts[tuple(new_word)] = word_count
             
-        return byte_text
     
-    
-    def train(self, data_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = 4) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-        
-        assert vocab_size > 256, "Vocabulary size must be greater than 256"
+    def _get_pretoken_counts_parallel(self, data_path: str, special_tokens: list[str], num_processes: int = None):
+        if num_processes is None:
+            num_processes = multiprocessing.cpu_count()
+            
         with open(data_path, "rb") as file:
             chunk_boundaries = find_chunk_boundaries(file, num_processes, "<|endoftext|>".encode("utf-8"))
             
-        chunks = list(zip(chunk_boundaries[:-1], chunk_boundaries[1:]))
-        args = [(data_path, start, end, special_tokens, self.PATTERN) for start, end in chunks]
-
-        with multiprocessing.Pool(len(args)) as pool:
-            pretokenized_texts = pool.starmap(pretokenize_chunk, args)
-
-        byte_text = []
-        for pretokenized_text in pretokenized_texts:
-            byte_text.extend(pretokenized_text)
+        # Prepare arguments for parallel processing
+        chunk_args = []
+        for start, end in zip(chunk_boundaries[:-1], chunk_boundaries[1:]):
+            chunk_args.append((data_path, start, end, special_tokens))
+            
+        # Process chunks in parallel
+        with multiprocessing.Pool(processes=num_processes) as pool:
+            chunk_results = pool.map(pretokenize_chunk, chunk_args)
+            
+        # Combine results
+        total_counts = defaultdict(int)
+        for chunk_count in chunk_results:
+            for pretoken, count in chunk_count.items():
+                total_counts[pretoken] += count
+        
+        return total_counts
+    
+    def train(self, data_path: str, vocab_size: int, special_tokens: list[str], num_processes: int = None) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+        
+        assert vocab_size > 256, "Vocabulary size must be greater than 256"
+        print("Starting pre-tokenization...")
+        pretoken_counts = self._get_pretoken_counts_parallel(data_path, special_tokens, num_processes)
 
         vocab: dict[int,bytes] = {i: bytes([i]) for i in range(256)}
         current_vocab_size: int = len(vocab)
@@ -79,7 +92,7 @@ class BPE:
         num_merges: int = vocab_size - current_vocab_size - len(special_tokens)
         
         # Initial count
-        counts = self._get_counts(byte_text)
+        counts = self._get_counts(pretoken_counts)
         
         for _ in tqdm(range(num_merges), desc="Merges"):
             
@@ -91,7 +104,7 @@ class BPE:
             current_vocab_size += 1
             
             if current_vocab_size < vocab_size:
-                byte_text = self._apply_merges(byte_text, max_pair, counts)
+                self._apply_merges(pretoken_counts, max_pair, counts)
         
         # Add special tokens to the vocabulary
         for token in special_tokens:
@@ -110,7 +123,7 @@ def train_bpe(data_path: str, output_dir: str, vocab_size: int, special_tokens: 
 if __name__ == "__main__":
     import time
     start_time = time.time()
-    train_bpe("data/test.txt", "tokenizer/corpus/500", 289, ["<|endoftext|>"])
+    train_bpe("data/tinystories_sample_5M.txt", "tokenizer/tiny-stories-sample/1000", 1000, ["<|endoftext|>"])
     end_time = time.time()
     print(f"Training completed in {end_time - start_time:.2f} seconds")
     # bpe = BPE()
@@ -122,7 +135,7 @@ if __name__ == "__main__":
     #     # Train the BPE tokenizer on a sample corpus
     #     # Adjust the path to your corpus file as needed
     #     # "data/tinystories_sample_5M.txt"
-    #     vocab, merges = bpe.train("data/tinystories_sample_5M.txt", 500, ["<|endoftext|>"])
+    #     vocab, merges = bpe.train("data/tinystories_sample_5M.txt", 1000, ["<|endoftext|>"])
     # end_time = time.time()
     # pr.disable()
     # pr.print_stats(sort='time')
