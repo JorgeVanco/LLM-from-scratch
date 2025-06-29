@@ -213,7 +213,8 @@ class Trainer:
     def estimate_loss(self) -> dict[str, float]:
         """Estimate loss on train and validation sets."""
         self.model.eval()
-        losses = {}
+        losses: dict = {}
+        total_loss: float = 0.0
         for x, y in self.val_data:
             x, y = x.to(self.device), y.to(self.device)
             with torch.autocast(device_type=self.device.type, dtype=self.dtype):
@@ -297,7 +298,9 @@ class Trainer:
 
         train_iter = itertools.cycle(self.train_data)
 
-        for iteration in tqdm(range(self.current_iter, self.config.training.max_iters)):
+        for iteration in tqdm(
+            range(self.current_iter, self.config.training.max_iters), position=0
+        ):
             self.current_iter = iteration
 
             # Update learning rate
@@ -351,10 +354,10 @@ class Trainer:
 
             # Evaluation
             if (
-                (iteration % self.config.training.eval_interval == 0
-                and iteration > 0 or iteration == self.config.training.max_iters - 1)
-                and self.val_data is not None
-            ):
+                iteration % self.config.training.eval_interval == 0
+                and iteration > 0
+                or iteration == self.config.training.max_iters - 1
+            ) and self.val_data is not None:
                 losses = self.estimate_loss()
 
                 # Check if this is the best model
