@@ -15,12 +15,14 @@ def generate_text(
     eos: str | None = "<|endoftext|>",
     device: torch.device | None = None,
 ) -> str:
-    
+
     tokens = tokenizer.encode(prompt)
     eos_id = tokenizer.encode(eos)[0] if eos is not None else None
-    
+
     for _ in range(max_tokens):
-        context = torch.LongTensor([tokens[-context_length :]], device=device)
+        context = torch.tensor(
+            [tokens[-context_length:]], dtype=torch.long, device=device
+        )
         logits = model(context)
         logits = logits[:, -1, :]
 
@@ -28,10 +30,10 @@ def generate_text(
             top_logits, _ = logits.topk(top_k, dim=-1)
             min_val = top_logits[:, -1]
             logits = torch.where(logits < min_val, -torch.inf, logits)
-            
+
         if temperature is not None and temperature > 0.0:
             logits /= temperature
-        
+
         if temperature == 0.0:
             token = logits.argmax(dim=-1)
         else:
