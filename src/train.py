@@ -210,15 +210,16 @@ class Trainer:
             param_group["lr"] = lr
 
     @torch.no_grad()
-    def estimate_loss(self) -> dict[str, float]:
+    def estimate_loss(self, use_whole_dataset: bool = False) -> dict[str, float]:
         """Estimate loss on train and validation sets."""
         self.model.eval()
         losses: dict = {}
         total_loss: float = 0.0
 
-        iters = min(len(self.val_data), self.config.training.eval_iters)
-        for _ in tqdm(range(iters), desc="Estimating loss", position=1):
-            x, y = next(self.val_data)
+        iters = len(self.val_data) if use_whole_dataset else min(len(self.val_data), self.config.training.eval_iters)
+        iter_dataloader = iter(self.val_data)
+        for _ in tqdm(range(iters), desc="Estimating loss", position=1, leave=False):
+            x, y = next(iter_dataloader)
             x, y = x.to(self.device), y.to(self.device)
 
             with torch.autocast(device_type=self.device.type, dtype=self.dtype):
@@ -227,7 +228,7 @@ class Trainer:
 
             total_loss += loss.item()
 
-        losses["val"] = total_loss / len(self.val_data)
+        losses["val"] = total_loss / iters
 
         self.model.train()
         return losses
@@ -362,7 +363,7 @@ class Trainer:
                 and iteration > 0
                 or iteration == self.config.training.max_iters - 1
             ) and self.val_data is not None:
-                losses = self.estimate_loss()
+                losses = self.estimate_loss(use_whole_dataset= iteration == self.config.training.max_iters - 1)
 
                 # Check if this is the best model
                 is_best = losses["val"] < self.best_val_loss
@@ -377,7 +378,7 @@ class Trainer:
                 self.log_metrics(metrics, tokens_processed)
 
                 print(
-                    f"Iter {iteration:6d} | Train Loss: {losses['train']:.4f} | "
+                    f"Iter {iteration:6d} | "
                     f"Val Loss: {losses['val']:.4f} | Best: {self.best_val_loss:.4f} | "
                     f"Tokens/sec: {tokens_per_sec:.0f} | Elapsed: {elapsed:.2f}s"
                 )
