@@ -10,10 +10,10 @@ import torch
 import torch.nn as nn
 
 from src.model import TransformerLM
-from src.data_loading import get_batch
+from src.data_loading import load_dataset
 from src.optimizers import SGD, AdamW
 from src.schedulers import learning_rate_cosine
-from src.tokenizer import Tokenizer
+from src.tokenizer import Tokenizer, load_tokenizer
 from src.utils import cross_entropy, gradient_clipping, softmax, generate_text, load_checkpoint, save_checkpoint
 from src.config import ExperimentConfig, ConfigManager
 
@@ -86,29 +86,22 @@ class Trainer:
     def load_data(self) -> None:
         """Load training and validation data."""
         print("Loading training data...")
-        train_data = np.memmap(self.config.training.train_data_path, dtype=np.uint16)
-        print(train_data)
+        self.train_data = load_dataset(self.config.training.train_data_path, self.config.training.batch_size, self.config.model.context_length, num_workers=4)
         if self.config.training.val_data_path and Path(self.config.training.val_data_path).exists():
-            val_data = np.memmap(self.config.training.val_data_path, dtype=np.uint16)
+            self.val_data = load_dataset(self.config.training.val_data_path, self.config.training.batch_size, self.config.model.context_length, num_workers=4)
         else:
-            print("No validation data provided, splitting training data...")
-            split_idx = int(0.9 * len(train_data))
-            val_data = train_data[split_idx:]
-            train_data = train_data[:split_idx]
-            
-        self.train_data = train_data
-        self.val_data = val_data
-        print(self.train_data)
-        print(f"Training tokens: {len(self.train_data):,}")
-        print(f"Validation tokens: {len(self.val_data):,}")
+            self.val_data = None
+
+        print(f"Training batches: {len(self.train_data):,}")
+        if self.val_data is not None:
+            print(f"Validation batches: {len(self.val_data):,}")
     
     def setup_tokenizer(self) -> None:
         """Setup the tokenizer."""
-        if self.config.tokenizer.vocab_path and self.config.tokenizer.merges_path:
+        if self.config.tokenizer.tokenizer_path:
             print("Loading tokenizer from files...")
-            self.tokenizer = Tokenizer.from_files(
-                vocab_filepath=self.config.tokenizer.vocab_path,
-                merges_filepath=self.config.tokenizer.merges_path,
+            self.tokenizer = load_tokenizer(
+                tokenizer_dir=self.config.tokenizer.tokenizer_path,
                 special_tokens=self.config.tokenizer.special_tokens
             )
         else:
@@ -116,15 +109,7 @@ class Trainer:
             # Create a simple character-level tokenizer
             vocab = {i: bytes([i]) for i in range(256)}
             self.tokenizer = Tokenizer(vocab, [], self.config.tokenizer.special_tokens)
-        
-        # # Tokenize the data
-        # print("Tokenizing training data...")
-        # self.train_data = np.array(self.tokenizer.encode(self.train_text), dtype=np.int32)
-        # print("Tokenizing validation data...")
-        # self.val_data = np.array(self.tokenizer.encode(self.val_text), dtype=np.int32)
-        
-        # print(f"Training tokens: {len(self.train_data):,}")
-        # print(f"Validation tokens: {len(self.val_data):,}")
+
         print(f"Vocabulary size: {len(self.tokenizer.vocab)}")
     
     def setup_model(self) -> None:
@@ -207,8 +192,8 @@ class Trainer:
         for split, data in [('train', self.train_data), ('val', self.val_data)]:
             total_loss = 0.0
             for _ in range(self.config.training.eval_iters):
-                x, y = get_batch(data, self.config.training.batch_size, 
-                                self.config.model.context_length, str(self.device))
+                x, y = next(iter(data))
+                x, y = x.to(self.device), y.to(self.device)
                 
                 with torch.autocast(device_type=self.device.type, dtype=self.dtype):
                     logits = self.model(x)
@@ -296,12 +281,8 @@ class Trainer:
             self.update_learning_rate(lr)
             
             # Get batch
-            x, y = get_batch(
-                self.train_data, 
-                self.config.training.batch_size,
-                self.config.model.context_length, 
-                str(self.device)
-            )
+            x, y = next(iter(self.train_data))
+            x, y = x.to(self.device), y.to(self.device)
             
             # Forward pass
             with torch.autocast(device_type=self.device.type, dtype=self.dtype):
@@ -327,22 +308,23 @@ class Trainer:
             # Logging
             if iteration % self.config.training.log_interval == 0:
                 elapsed = time.time() - start_time
-                tokens_per_sec = (iteration * self.config.training.batch_size * 
-                                self.config.model.context_length) / elapsed
-                
+                tokens_processed = (iteration + 1) * self.config.training.batch_size * self.config.model.context_length
+                tokens_per_sec = tokens_processed / elapsed
+
                 metrics = {
                     'train/loss': loss.item(),
                     'train/lr': lr,
                     'train/tokens_per_sec': tokens_per_sec,
                 }
                 
-                self.log_metrics(metrics, iteration)
+                self.log_metrics(metrics, tokens_processed)
                 
                 print(f"Iter {iteration:6d} | Loss: {loss.item():.4f} | "
-                      f"LR: {lr:.2e} | Tokens/sec: {tokens_per_sec:.0f}")
+                      f"LR: {lr:.2e} | Tokens/sec: {tokens_per_sec:.0f} | "
+                      f"Tokens processed: {tokens_processed:,} | Elapsed: {elapsed:.2f}s")
             
             # Evaluation
-            if iteration % self.config.training.eval_interval == 0 and iteration > 0:
+            if iteration % self.config.training.eval_interval == 0 and iteration > 0 and self.val_data is not None:
                 losses = self.estimate_loss()
                 
                 # Check if this is the best model
@@ -356,10 +338,11 @@ class Trainer:
                     'eval/best_val_loss': self.best_val_loss,
                 }
                 
-                self.log_metrics(metrics, iteration)
+                self.log_metrics(metrics, tokens_processed)
                 
                 print(f"Iter {iteration:6d} | Train Loss: {losses['train']:.4f} | "
-                      f"Val Loss: {losses['val']:.4f} | Best: {self.best_val_loss:.4f}")
+                      f"Val Loss: {losses['val']:.4f} | Best: {self.best_val_loss:.4f} | "
+                      f"Tokens/sec: {tokens_per_sec:.0f} | Elapsed: {elapsed:.2f}s")
                 
                 # Generate sample text
                 sample = self.generate_sample()

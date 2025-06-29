@@ -1,1 +1,1 @@
-from .data_loading import get_batch
+from .data_loading import get_batch, load_dataset

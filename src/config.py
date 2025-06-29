@@ -55,6 +55,9 @@ class SchedulerConfig:
 @dataclass
 class TrainingConfig:
     """Configuration for training parameters."""
+    # Required fields
+    train_data_path: str
+    
     batch_size: int = 16
     max_iters: int = 100000
     eval_interval: int = 1000
@@ -65,8 +68,7 @@ class TrainingConfig:
     compile_model: bool = False  # torch.compile
     
     # Data loading
-    train_data_path: str = "data/train.txt"
-    val_data_path: Optional[str] = "data/val.txt"
+    val_data_path: Optional[str] = ""
     
     # Device settings
     device: str = "auto"  # "auto", "cuda", "cpu"
@@ -76,8 +78,7 @@ class TrainingConfig:
 @dataclass
 class TokenizerConfig:
     """Configuration for tokenizer."""
-    vocab_path: Optional[str] = None
-    merges_path: Optional[str] = None
+    tokenizer_path: str
     special_tokens: list[str] = field(default_factory=lambda: ["<|endoftext|>"])
 
 
@@ -213,8 +214,7 @@ class ConfigManager:
                 'dtype': config.training.dtype,
             },
             'tokenizer': {
-                'vocab_path': config.tokenizer.vocab_path,
-                'merges_path': config.tokenizer.merges_path,
+                'tokenizer_path': config.tokenizer.tokenizer_path,
                 'special_tokens': config.tokenizer.special_tokens,
             },
             'logging': {

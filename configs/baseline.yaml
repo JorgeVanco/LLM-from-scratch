@@ -5,12 +5,12 @@ description: "Baseline small model for testing"
 seed: 42
 
 model:
-  vocab_size: 50257
-  context_length: 512
-  num_layers: 6
-  d_model: 384
-  num_heads: 6
-  d_ff: 1536
+  vocab_size: 10000
+  context_length: 256
+  num_layers: 4
+  d_model: 512
+  num_heads: 16
+  d_ff: 1344
   rope_theta: 10000.0
 
 optimizer:
@@ -28,28 +28,27 @@ scheduler:
   cosine_cycle_iters: 20000
 
 training:
-  batch_size: 8
-  max_iters: 50000
-  eval_interval: 1000
+  batch_size: 512
+  max_iters: 500
+  eval_interval: 
   eval_iters: 100
-  log_interval: 100
+  log_interval: 50
   save_interval: 2500
   gradient_clip_val: 1.0
   compile_model: false
-  train_data_path: "data/train.txt"
-  val_data_path: "data/val.txt"
+  train_data_path: "data/tokenized/TinyStoriesV2-GPT4/10000/train.npy"
+  val_data_path: "" #"data/tokenized/TinyStoriesV2-GPT4/10000/val.npy"
   device: "auto"
   dtype: "float32"
 
 tokenizer:
-  vocab_path: null
-  merges_path: null
+  tokenizer_path: "tokenizer/tiny-stories/10000"
   special_tokens: ["<|endoftext|>"]
 
 logging:
   project_name: "llm-from-scratch"
-  run_name: null
+  run_name: "baseline"
   log_dir: "logs"
   checkpoint_dir: "checkpoints"
-  use_wandb: false
-  wandb_project: null
+  use_wandb: true
+  wandb_project: "llm-from-scratch"
