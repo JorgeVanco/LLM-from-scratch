@@ -43,7 +43,7 @@ class BPE:
                         
                     if j >= 1:
                         pair_counts[(word[j - 1], a)] -= word_count
-                        pair_counts[(word[j - 1], merged)] += word_count
+                        pair_counts[(new_word[-1], merged)] += word_count
                     
                     j += 2  # Skip both merged bytes
                 else:
