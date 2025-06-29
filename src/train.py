@@ -1,13 +1,12 @@
-import os
-import sys
 import time
 import random
 import argparse
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any
 import numpy as np
 import torch
-import torch.nn as nn
+from tqdm import tqdm
+import itertools
 
 from src.model import TransformerLM
 from src.data_loading import load_dataset
@@ -184,7 +183,7 @@ class Trainer:
             param_group['lr'] = lr
     
     @torch.no_grad()
-    def estimate_loss(self) -> Dict[str, float]:
+    def estimate_loss(self) -> dict[str, float]:
         """Estimate loss on train and validation sets."""
         self.model.eval()
         losses = {}
@@ -241,7 +240,7 @@ class Trainer:
         self.current_iter = load_checkpoint(checkpoint_path, self.model, self.optimizer)
         print(f"Loaded checkpoint from iteration {self.current_iter}")
     
-    def log_metrics(self, metrics: Dict[str, Any], iteration: int):
+    def log_metrics(self, metrics: dict[str, Any], iteration: int) -> None:
         """Log metrics to wandb."""
         
         # Log to wandb
@@ -269,11 +268,14 @@ class Trainer:
         """Main training loop."""
         print("Starting training...")
         print(f"Training for {self.config.training.max_iters:,} iterations")
+        print(f"Total tokens: {self.config.training.max_iters * self.config.training.batch_size * self.config.model.context_length:,}")
         
         self.model.train()
         start_time = time.time()
         
-        for iteration in range(self.current_iter, self.config.training.max_iters):
+        train_iter = itertools.cycle(self.train_data)
+        
+        for iteration in tqdm(range(self.current_iter, self.config.training.max_iters)):
             self.current_iter = iteration
             
             # Update learning rate
@@ -281,7 +283,7 @@ class Trainer:
             self.update_learning_rate(lr)
             
             # Get batch
-            x, y = next(iter(self.train_data))
+            x, y = next(train_iter)
             x, y = x.to(self.device), y.to(self.device)
             
             # Forward pass

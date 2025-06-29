@@ -68,14 +68,14 @@ def load_dataset(
     dataset_path: str,
     batch_size: int = 32,
     context_length: int = 1024,
-    shuffle: bool = True,
+    shuffle: bool = False,
     num_workers: int = 0,
     generator: torch.Generator | None = None,
     pin_memory: bool = False,
     pin_memory_device: str = "",
     drop_last: bool = False) -> DataLoader:
     
-    dataset = np.memmap(dataset_path, dtype=np.uint16)
+    dataset = np.memmap(dataset_path, dtype=np.uint16, mode='r')
     dataloader = get_dataloader(dataset,
                                 batch_size=batch_size,
                                 context_length=context_length,
