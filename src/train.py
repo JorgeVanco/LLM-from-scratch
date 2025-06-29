@@ -85,9 +85,9 @@ class Trainer:
     def load_data(self) -> None:
         """Load training and validation data."""
         print("Loading training data...")
-        self.train_data = load_dataset(self.config.training.train_data_path, self.config.training.batch_size, self.config.model.context_length, num_workers=4)
+        self.train_data = load_dataset(self.config.training.train_data_path, self.config.training.batch_size, self.config.model.context_length, num_workers=0)
         if self.config.training.val_data_path and Path(self.config.training.val_data_path).exists():
-            self.val_data = load_dataset(self.config.training.val_data_path, self.config.training.batch_size, self.config.model.context_length, num_workers=4)
+            self.val_data = load_dataset(self.config.training.val_data_path, self.config.training.batch_size, self.config.model.context_length, num_workers=0)
         else:
             self.val_data = None
 
