@@ -34,7 +34,6 @@ class BPE:
             j = 0
             while j < len(word):
                 if j < len(word) - 1 and word[j] == a and word[j + 1] == b:
-                    new_word.append(merged)
                     
                     # Update counts
                     if j + 1 < len(word) - 1:
@@ -45,6 +44,7 @@ class BPE:
                         pair_counts[(word[j - 1], a)] -= word_count
                         pair_counts[(new_word[-1], merged)] += word_count
                     
+                    new_word.append(merged)
                     j += 2  # Skip both merged bytes
                 else:
                     new_word.append(word[j])
