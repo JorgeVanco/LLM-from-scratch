@@ -5,50 +5,50 @@ description: "Baseline small model for testing"
 seed: 42
 
 model:
-  vocab_size: 10000
-  context_length: 256
-  num_layers: 4
-  d_model: 512
-  num_heads: 16
-  d_ff: 1344
-  rope_theta: 10000.0
+    vocab_size: 10000
+    context_length: 256
+    num_layers: 4
+    d_model: 512
+    num_heads: 16
+    d_ff: 1344
+    rope_theta: 10000.0
 
 optimizer:
-  name: "AdamW"
-  lr: 3e-4
-  betas: [0.9, 0.95]
-  eps: 1e-8
-  weight_decay: 0.1
+    name: "AdamW"
+    lr: 3e-4
+    betas: [0.9, 0.95]
+    eps: 1e-8
+    weight_decay: 0.1
 
 scheduler:
-  use_scheduler: true
-  max_learning_rate: 3e-4
-  min_learning_rate: 3e-5
-  warmup_iters: 1000
-  cosine_cycle_iters: 20000
+    use_scheduler: true
+    max_learning_rate: 3e-4
+    min_learning_rate: 3e-5
+    warmup_iters: 1000
+    cosine_cycle_iters: 20000
 
 training:
-  batch_size: 256
-  max_iters: 5000
-  eval_interval: 1000
-  eval_iters: 100
-  log_interval: 50
-  save_interval: 2500
-  gradient_clip_val: 1.0
-  compile_model: false
-  train_data_path: "data/tokenized/TinyStoriesV2-GPT4/10000/train.npy"
-  val_data_path: "" #"data/tokenized/TinyStoriesV2-GPT4/10000/val.npy"
-  device: "auto"
-  dtype: "float32"
+    batch_size: 256
+    max_iters: 5000
+    eval_interval: 100
+    eval_iters: 100
+    log_interval: 50
+    save_interval: 2500
+    gradient_clip_val: 1.0
+    compile_model: false
+    train_data_path: "data/tokenized/TinyStoriesV2-GPT4/10000/train.npy"
+    val_data_path: "data/tokenized/TinyStoriesV2-GPT4/10000/val.npy"
+    device: "auto"
+    dtype: "float32"
 
 tokenizer:
-  tokenizer_path: "tokenizer/tiny-stories/10000"
-  special_tokens: ["<|endoftext|>"]
+    tokenizer_path: "tokenizer/tiny-stories/10000"
+    special_tokens: ["<|endoftext|>"]
 
 logging:
-  project_name: "llm-from-scratch"
-  run_name: "baseline"
-  log_dir: "logs"
-  checkpoint_dir: "checkpoints"
-  use_wandb: false
-  wandb_project: "llm-from-scratch"
+    project_name: "llm-from-scratch"
+    run_name: "baseline"
+    log_dir: "logs"
+    checkpoint_dir: "checkpoints"
+    use_wandb: false
+    wandb_project: "llm-from-scratch"
