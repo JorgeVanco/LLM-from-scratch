@@ -215,8 +215,12 @@ class Trainer:
         self.model.eval()
         losses: dict = {}
         total_loss: float = 0.0
-        for x, y in self.val_data:
+
+        iters = min(len(self.val_data), self.config.training.eval_iters)
+        for _ in tqdm(range(iters), desc="Estimating loss", position=1):
+            x, y = next(self.val_data)
             x, y = x.to(self.device), y.to(self.device)
+
             with torch.autocast(device_type=self.device.type, dtype=self.dtype):
                 logits = self.model(x)
                 loss = cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
