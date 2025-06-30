@@ -304,7 +304,7 @@ class Trainer:
         train_iter = itertools.cycle(self.train_data)
 
         for iteration in tqdm(
-            range(self.current_iter, self.config.training.max_iters), position=0
+            range(self.current_iter, self.config.training.max_iters), position=0, leave=True
         ):
             self.current_iter = iteration
 
@@ -363,7 +363,7 @@ class Trainer:
                 and iteration > 0
                 or iteration == self.config.training.max_iters - 1
             ) and self.val_data is not None:
-                losses = self.estimate_loss(use_whole_dataset= iteration == self.config.training.max_iters - 1)
+                losses = self.estimate_loss(use_whole_dataset= False)
 
                 # Check if this is the best model
                 is_best = losses["val"] < self.best_val_loss

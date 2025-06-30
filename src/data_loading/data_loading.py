@@ -46,7 +46,7 @@ class RandomDataloader:
         self.device = device
         self.generator = generator
 
-    def __iter__(self) -> Generator[tuple[torch.Tensor, torch.Tensor]]:
+    def __iter__(self) -> Generator[tuple[torch.Tensor, torch.Tensor], None, None]:
         while True:
             inputs, targets = get_batch(
                 self.dataset,
@@ -55,6 +55,9 @@ class RandomDataloader:
                 self.device
             )
             yield inputs, targets
+
+    def __len__(self) -> int:
+        return len(self.dataset) - self.context_length
 
 
 def get_dataloader(
