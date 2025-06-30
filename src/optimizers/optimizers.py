@@ -53,12 +53,18 @@ class AdamW(torch.optim.Optimizer):
                 
                 grad = p.grad.data
                 
-                m = state.get("m", 0)
-                v = state.get("v", 0)
-                t = state.get("t", 1)
-                
-                m = betas[0] * m + (1 - betas[0]) * grad
-                v = betas[1] * v + (1 - betas[1]) * grad.square()
+                if "t" not in state:
+                    state["t"] = 1
+                    state["m"] = torch.zeros_like(p.data)
+                    state["v"] = torch.zeros_like(p.data)
+                m = state["m"]
+                v = state["v"]
+                t = state["t"]
+
+                m.mul_(betas[0]).add_((1 - betas[0]) * grad)
+                v.mul_(betas[1]).addcmul_((1 - betas[1]), grad, grad)
+                # m = betas[0] * m + (1 - betas[0]) * grad
+                # v = betas[1] * v + (1 - betas[1]) * grad.square()
                 
                 lr_t = lr * math.sqrt(1 - betas[1] ** t) / (1 - betas[0] ** t)
 
