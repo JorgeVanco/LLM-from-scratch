@@ -51,7 +51,7 @@ class AdamW(torch.optim.Optimizer):
                 
                 state = self.state[p]
                 
-                grad = p.grad.data
+                # grad = p.grad.data
                 
                 if "t" not in state:
                     state["t"] = 1
@@ -61,19 +61,19 @@ class AdamW(torch.optim.Optimizer):
                 v = state["v"]
                 t = state["t"]
 
-                m.mul_(betas[0]).add_((1 - betas[0]) * grad)
-                v.mul_(betas[1]).addcmul_((1 - betas[1]), grad, grad)
+                m.mul_(betas[0]).add_((1 - betas[0]) * p.grad.data)
+                v.mul_(betas[1]).addcmul_(p.grad.data, p.grad.data, value=(1 - betas[1]))
                 # m = betas[0] * m + (1 - betas[0]) * grad
                 # v = betas[1] * v + (1 - betas[1]) * grad.square()
                 
-                lr_t = lr * math.sqrt(1 - betas[1] ** t) / (1 - betas[0] ** t)
+                # lr_t = 
 
-                p.data -= lr_t * m / (v.sqrt() + eps)   # update parameters
+                p.data -= lr * math.sqrt(1 - betas[1] ** t) / (1 - betas[0] ** t) * m / (v.sqrt() + eps)   # update parameters
                 p.data -= lr * weight_decay * p.data    # apply weight decay
 
-                state["m"] = m
-                state["v"] = v
-                state["t"] = t + 1
+                # state["m"] = m
+                # state["v"] = v
+                state["t"] += 1
                  
                                 
         return loss
