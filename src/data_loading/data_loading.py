@@ -3,6 +3,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy.typing as npt
 import numpy as np
 import random
+from typing import Generator
 
 def get_batch(
     dataset: npt.NDArray, batch_size: int, context_length: int, device: str
@@ -37,6 +38,24 @@ class TextDataset(Dataset):
         
         return input_seq, target_seq
     
+class RandomDataloader:
+    def __init__(self, dataset: npt.NDArray, batch_size: int = 32, context_length: int = 1024, device: str = "cpu", generator: torch.Generator | None = None) -> None:
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.context_length = context_length
+        self.device = device
+        self.generator = generator
+
+    def __iter__(self) -> Generator[tuple[torch.Tensor, torch.Tensor]]:
+        while True:
+            inputs, targets = get_batch(
+                self.dataset,
+                self.batch_size,
+                self.context_length,
+                self.device
+            )
+            yield inputs, targets
+
 
 def get_dataloader(
     dataset: npt.NDArray,
@@ -49,6 +68,14 @@ def get_dataloader(
     pin_memory_device: str = "",
     drop_last: bool = False
 ) -> DataLoader:
+    
+    return RandomDataloader(
+        dataset=dataset,
+        batch_size=batch_size,
+        context_length=context_length,
+        device="cpu",
+        generator=generator
+    )
     
     dataset = TextDataset(dataset, context_length)
     
