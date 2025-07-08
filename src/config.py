@@ -91,7 +91,7 @@ class LoggingConfig:
     checkpoint_dir: str = "checkpoints"
     use_wandb: bool = False
     wandb_project: Optional[str] = None
-    tags: list = []
+    tags: list[str] = field(default_factory=lambda: [])
 
 
 @dataclass
