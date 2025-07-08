@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import itertools
+import json
 
 from src.model import TransformerLM
 from src.data_loading import load_dataset
@@ -398,11 +399,17 @@ class Trainer:
         print("Training completed!")
         self.save_checkpoint(self.config.training.max_iters)
 
+        results = {
+            "final_loss": float(losses["val"]),
+            "best_val_loss": float(self.best_val_loss),
+            "status": "completed"
+        }
+
         if self.use_wandb:
             import wandb
-
             wandb.finish()
 
+        print(f"RESULTS_JSON:{json.dumps(results)}", flush=True)
 
 def parse_cli_overrides(argv) -> dict:
     overrides = {}
@@ -433,10 +440,12 @@ def main() -> None:
     parser.add_argument("--config", type=str, required=True, help="Path to config file")
     parser.add_argument("--resume", type=str, help="Path to checkpoint to resume from")
 
-    args = parser.parse_args()
-
+    args, overrides = parser.parse_known_args()
+    
     # Load configuration
     config = ConfigManager.load_config(args.config)
+    for key_path, value in parse_cli_overrides(overrides).items():
+        apply_override(config, key_path, value)
 
     # Create trainer
     trainer = Trainer(config)
