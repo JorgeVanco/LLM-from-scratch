@@ -322,6 +322,8 @@ class Trainer:
                 logits = self.model(x)
                 loss = cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
 
+            del x, y, logits  # Free memory
+            
             # Backward pass
             self.optimizer.zero_grad()
             loss.backward()
