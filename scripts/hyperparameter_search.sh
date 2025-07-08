@@ -6,12 +6,14 @@ set -e
 
 # Default configuration
 CONFIG_FILE="configs/baseline.yaml"
-RESULTS_CSV="lr_search_results.csv"
+RESULTS_CSV="hyperparameter_search_results.csv"
 NUM_GPUS=8
-BASE_LOG_DIR="logs/lr_search"
-BASE_CHECKPOINT_DIR="checkpoints/lr_search"
+BASE_LOG_DIR="logs/hyperparameter_search"
+BASE_CHECKPOINT_DIR="checkpoints/hyperparameter_search"
 RESUME_SEARCH=false
 SEARCH_TYPE="grid"
+PARAMETER_NAME="learning_rate"
+PARAMETER_PATH="scheduler.max_learning_rate,optimizer.lr"
 
 # Global array to store PIDs of active background experiments
 declare -a ACTIVE_PIDS=()
@@ -42,7 +44,49 @@ cleanup_and_exit() {
 # Trap signals to ensure cleanup on script interruption
 trap 'cleanup_and_exit' INT TERM
 
+# Function to display help
+show_help() {
+    cat << EOF
+Usage: $0 [options]
+
+Options:
+  --config PATH           Path to config file (default: configs/baseline.yaml)
+  --output PATH          Output CSV file (default: hyperparameter_search_results.csv)
+  --gpus NUM             Number of GPUs to use (default: 8)
+  --resume               Resume previous search
+  --search-type TYPE     Search type: grid, random, or custom (default: grid)
+  --parameter NAME       Parameter name for display (default: learning_rate)
+  --parameter-path PATH  Config path(s) to set, comma-separated (default: scheduler.max_learning_rate,optimizer.lr)
+  --values VALUES        Space-separated values to search (overrides search-type presets)
+  -h, --help             Show this help message
+
+Examples:
+  # Learning rate search (default)
+  $0 --search-type grid
+
+  # Batch size search
+  $0 --parameter batch_size --parameter-path training.batch_size --values "16 32 64 128 256"
+
+  # AdamW beta1 search
+  $0 --parameter beta1 --parameter-path optimizer.beta1 --values "0.9 0.95 0.99"
+
+  # AdamW beta2 search
+  $0 --parameter beta2 --parameter-path optimizer.beta2 --values "0.999 0.9999"
+
+  # Multiple parameter paths (e.g., setting both scheduler and optimizer LR)
+  $0 --parameter learning_rate --parameter-path scheduler.max_learning_rate,optimizer.lr --values "1e-4 2e-4 3e-4"
+
+  # Weight decay search
+  $0 --parameter weight_decay --parameter-path optimizer.weight_decay --values "0.0 0.01 0.1"
+
+  # Dropout search
+  $0 --parameter dropout --parameter-path model.dropout --values "0.0 0.1 0.2 0.3"
+
+EOF
+}
+
 # Parse command line arguments
+CUSTOM_VALUES=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --config)
@@ -65,32 +109,82 @@ while [[ $# -gt 0 ]]; do
             SEARCH_TYPE="$2"
             shift 2
             ;;
+        --parameter)
+            PARAMETER_NAME="$2"
+            shift 2
+            ;;
+        --parameter-path)
+            PARAMETER_PATH="$2"
+            shift 2
+            ;;
+        --values)
+            CUSTOM_VALUES="$2"
+            shift 2
+            ;;
         -h|--help)
-            echo "Usage: $0 [options]"
-            echo "Options:"
-            echo "  --config PATH      Path to config file (default: configs/baseline.yaml)"
-            echo "  --output PATH      Output CSV file (default: lr_search_results.csv)"
-            echo "  --gpus NUM         Number of GPUs to use (default: 8)"
-            echo "  --resume           Resume previous search"
-            echo "  --search-type TYPE Search type: grid, random, or custom (default: grid)"
-            echo "  -h, --help         Show this help message"
+            show_help
             exit 0
             ;;
         *)
             echo "Unknown option: $1"
+            show_help
             exit 1
             ;;
     esac
 done
 
-# Learning rate configurations
+# Hyperparameter value configurations
 declare -A SEARCH_CONFIGS
-SEARCH_CONFIGS[grid]="1e-5 4e-5 7e5 1e-4 4e-4 7e-4 1e-3 4e-3 7e-3 1e-2"
-SEARCH_CONFIGS[random]="2.3e-5 7.8e-5 1.2e-4 4.7e-4 8.9e-4 2.1e-3 5.6e-3 1.3e-2"
-SEARCH_CONFIGS[custom]="1e-4 2e-4 3e-4 4e-4 5e-4"
 
-# Get learning rates based on search type
-IFS=' ' read -ra LEARNING_RATES <<< "${SEARCH_CONFIGS[$SEARCH_TYPE]}"
+# Learning rate configurations
+SEARCH_CONFIGS[learning_rate_grid]="1e-5 4e-5 7e-5 1e-4 4e-4 7e-4 1e-3 4e-3 7e-3 1e-2"
+SEARCH_CONFIGS[learning_rate_random]="2.3e-5 7.8e-5 1.2e-4 4.7e-4 8.9e-4 2.1e-3 5.6e-3 1.3e-2"
+SEARCH_CONFIGS[learning_rate_custom]="1e-4 2e-4 3e-4 4e-4 5e-4"
+
+# Batch size configurations
+SEARCH_CONFIGS[batch_size_grid]="8 16 32 64 128 256"
+SEARCH_CONFIGS[batch_size_random]="12 24 48 96 192"
+SEARCH_CONFIGS[batch_size_custom]="16 32 64 128"
+
+# AdamW beta1 configurations
+SEARCH_CONFIGS[beta1_grid]="0.8 0.85 0.9 0.95 0.99"
+SEARCH_CONFIGS[beta1_random]="0.82 0.88 0.92 0.96"
+SEARCH_CONFIGS[beta1_custom]="0.9 0.95 0.99"
+
+# AdamW beta2 configurations
+SEARCH_CONFIGS[beta2_grid]="0.99 0.995 0.999 0.9999"
+SEARCH_CONFIGS[beta2_random]="0.992 0.997 0.9995"
+SEARCH_CONFIGS[beta2_custom]="0.999 0.9999"
+
+# Weight decay configurations
+SEARCH_CONFIGS[weight_decay_grid]="0.0 0.01 0.05 0.1 0.2"
+SEARCH_CONFIGS[weight_decay_random]="0.005 0.03 0.07 0.15"
+SEARCH_CONFIGS[weight_decay_custom]="0.0 0.01 0.1"
+
+# Dropout configurations
+SEARCH_CONFIGS[dropout_grid]="0.0 0.1 0.2 0.3 0.4 0.5"
+SEARCH_CONFIGS[dropout_random]="0.05 0.15 0.25 0.35 0.45"
+SEARCH_CONFIGS[dropout_custom]="0.0 0.1 0.2 0.3"
+
+# Get parameter values
+if [ -n "$CUSTOM_VALUES" ]; then
+    IFS=' ' read -ra PARAMETER_VALUES <<< "$CUSTOM_VALUES"
+else
+    # Try to find predefined configuration
+    config_key="${PARAMETER_NAME}_${SEARCH_TYPE}"
+    if [[ -n "${SEARCH_CONFIGS[$config_key]}" ]]; then
+        IFS=' ' read -ra PARAMETER_VALUES <<< "${SEARCH_CONFIGS[$config_key]}"
+    else
+        echo "Error: No predefined configuration found for parameter '$PARAMETER_NAME' with search type '$SEARCH_TYPE'"
+        echo "Available configurations:"
+        for key in "${!SEARCH_CONFIGS[@]}"; do
+            echo "  $key: ${SEARCH_CONFIGS[$key]}"
+        done
+        echo ""
+        echo "Use --values to specify custom values, or choose from available parameter/search-type combinations."
+        exit 1
+    fi
+fi
 
 # Validation
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -98,8 +192,8 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-if [ ${#LEARNING_RATES[@]} -eq 0 ]; then
-    echo "Error: No learning rates defined for search type '$SEARCH_TYPE'"
+if [ ${#PARAMETER_VALUES[@]} -eq 0 ]; then
+    echo "Error: No parameter values defined"
     exit 1
 fi
 
@@ -113,16 +207,16 @@ if [ "$RESUME_SEARCH" = true ] && [ -f "$RESULTS_CSV" ]; then
     cat "$RESULTS_CSV"
     echo ""
 else
-    echo "learning_rate,final_loss,best_val_loss,experiment_name,gpu_id,status,start_time,end_time,duration_minutes,epochs,best_epoch" > "${RESULTS_CSV}"
+    echo "${PARAMETER_NAME},final_loss,best_val_loss,experiment_name,gpu_id,status,start_time,end_time,duration_minutes,epochs,best_epoch" > "${RESULTS_CSV}"
 fi
 
 # Function to check if experiment already completed
 is_experiment_completed() {
-    local lr=$1
+    local param_value=$1
 
     (
         flock -s 200
-        grep -q "^${lr}," "$RESULTS_CSV" && return 0
+        grep -q "^${param_value}," "$RESULTS_CSV" && return 0
     ) 200>>"${RESULTS_CSV}.lock"
     return 1
 }
@@ -152,10 +246,24 @@ except:
     fi
 }
 
+# Function to build parameter override arguments
+build_parameter_overrides() {
+    local param_value=$1
+    local overrides=""
+    
+    # Split parameter paths by comma and create override for each
+    IFS=',' read -ra PATHS <<< "$PARAMETER_PATH"
+    for path in "${PATHS[@]}"; do
+        overrides+=" ${path}=${param_value}"
+    done
+    
+    echo "$overrides"
+}
+
 run_experiment() {
-    local lr=$1
+    local param_value=$1
     local gpu_id=$2
-    local exp_name="lr_${lr}_gpu_${gpu_id}"
+    local exp_name="${PARAMETER_NAME}_${param_value}_gpu_${gpu_id}"
     local log_file="${BASE_LOG_DIR}/${exp_name}.log"
 
     local start_time=$(date +%s)
@@ -163,12 +271,14 @@ run_experiment() {
 
     echo "[$start_time_str] Starting experiment: ${exp_name} on GPU ${gpu_id}"
     
+    # Build parameter overrides
+    local param_overrides=$(build_parameter_overrides "$param_value")
+    
     # Execute the training command
     # Output is redirected to a log file
     uv run -m src.train \
         --config="${CONFIG_FILE}" \
-        scheduler.max_learning_rate=${lr} \
-        optimizer.lr=${lr} \
+        ${param_overrides} \
         experiment_name="${exp_name}" \
         logging.log_dir="${BASE_LOG_DIR}" \
         logging.checkpoint_dir="${BASE_CHECKPOINT_DIR}" \
@@ -192,7 +302,7 @@ run_experiment() {
     # Use flock for safe concurrent writing to the CSV file
     (
         flock -x 200 # Exclusive lock
-        echo "${lr},${final_loss},${best_val_loss},${exp_name},${gpu_id},${status},${start_time_str},${end_time_str},${duration},${epochs},${best_epoch}" >> "${RESULTS_CSV}"
+        echo "${param_value},${final_loss},${best_val_loss},${exp_name},${gpu_id},${status},${start_time_str},${end_time_str},${duration},${epochs},${best_epoch}" >> "${RESULTS_CSV}"
     ) 200>>"${RESULTS_CSV}.lock" # Use a consistent lock file
 
     if [ "$status" = "completed" ]; then
@@ -222,7 +332,7 @@ wait_for_gpu() {
 # Function to display real-time progress
 show_progress() {
     local completed=0
-    local total=${#LEARNING_RATES[@]}
+    local total=${#PARAMETER_VALUES[@]}
     
     while [ $completed -lt $total ]; do
         if [ -f "$RESULTS_CSV" ]; then
@@ -239,9 +349,9 @@ show_progress() {
             best_result=$(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | grep \"completed\" | sort -t',' -k3 -n | head -1")
             
             if [ -n "$best_result" ]; then
-                local best_lr=$(echo "$best_result" | cut -d',' -f1)
+                local best_param=$(echo "$best_result" | cut -d',' -f1)
                 local best_val_loss=$(echo "$best_result" | cut -d',' -f3)
-                echo -ne "Best: LR=$best_lr, Val=$best_val_loss"
+                echo -ne "Best: ${PARAMETER_NAME}=$best_param, Val=$best_val_loss"
             fi
         fi
         
@@ -255,8 +365,10 @@ echo "========================================"
 echo "HYPERPARAMETER SEARCH"
 echo "========================================"
 echo "Config file: $CONFIG_FILE"
+echo "Parameter: $PARAMETER_NAME"
+echo "Parameter path(s): $PARAMETER_PATH"
 echo "Search type: $SEARCH_TYPE"
-echo "Learning rates: ${LEARNING_RATES[*]}"
+echo "Parameter values: ${PARAMETER_VALUES[*]}"
 echo "Number of GPUs: $NUM_GPUS"
 echo "Results file: $RESULTS_CSV"
 echo "Resume search: $RESUME_SEARCH"
@@ -277,10 +389,10 @@ gpu_counter=0
 experiments_launched=0
 experiments_skipped=0
 
-for lr in "${LEARNING_RATES[@]}"; do
+for param_value in "${PARAMETER_VALUES[@]}"; do
     # Skip if already completed and resuming
-    if [ "$RESUME_SEARCH" = true ] && is_experiment_completed "$lr"; then
-        echo "Skipping already completed experiment for LR: $lr"
+    if [ "$RESUME_SEARCH" = true ] && is_experiment_completed "$param_value"; then
+        echo "Skipping already completed experiment for ${PARAMETER_NAME}: $param_value"
         ((experiments_skipped++))
         continue
     fi
@@ -289,7 +401,7 @@ for lr in "${LEARNING_RATES[@]}"; do
     wait_for_gpu
     
     # Run experiment in background and store PID
-    run_experiment "$lr" "$gpu_counter" &
+    run_experiment "$param_value" "$gpu_counter" &
     ACTIVE_PIDS+=($!) # Add the PID of the last background command to the array
     
     experiments_launched=$((experiments_launched + 1))
@@ -328,22 +440,22 @@ echo "Results saved to: ${RESULTS_CSV}"
 # Display enhanced results summary
 echo ""
 echo "=== ENHANCED RESULTS SUMMARY ==="
-printf "%-12s | %-10s | %-13s | %-8s | %-8s | %-10s | %s\n" "Learning Rate" "Final Loss" "Best Val Loss" "Duration" "Epochs" "Best Epoch" "Status"
-echo "-------------|------------|---------------|----------|----------|------------|--------"
-# Corrected: Use flock directly on the file for shared lock
-flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | while IFS=',' read -r lr final_loss best_val_loss exp_name gpu_id status start_time end_time duration epochs best_epoch; do
-    printf \"%-12s | %-10s | %-13s | %-8s | %-8s | %-10s | %s\n\" \"\$lr\" \"\$final_loss\" \"\$best_val_loss\" \"\${duration}m\" \"\$epochs\" \"\$best_epoch\" \"\$status\"
+printf "%-15s | %-10s | %-13s | %-8s | %-8s | %-10s | %s\n" "$PARAMETER_NAME" "Final Loss" "Best Val Loss" "Duration" "Epochs" "Best Epoch" "Status"
+echo "----------------|------------|---------------|----------|----------|------------|--------"
+# Use flock directly on the file for shared lock
+flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | while IFS=',' read -r param_value final_loss best_val_loss exp_name gpu_id status start_time end_time duration epochs best_epoch; do
+    printf \"%-15s | %-10s | %-13s | %-8s | %-8s | %-10s | %s\n\" \"\$param_value\" \"\$final_loss\" \"\$best_val_loss\" \"\${duration}m\" \"\$epochs\" \"\$best_epoch\" \"\$status\"
 done"
 
-# Enhanced best learning rate analysis
+# Enhanced best parameter analysis
 echo ""
-echo "=== BEST LEARNING RATE ANALYSIS ==="
-# Corrected: Use flock directly on the file for shared lock
+echo "=== BEST ${PARAMETER_NAME^^} ANALYSIS ==="
+# Use flock directly on the file for shared lock
 best_result=$(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | grep \"completed\" | sort -t',' -k3 -n | head -1")
 
 if [ -n "$best_result" ]; then
-    IFS=',' read -r best_lr best_final_loss best_val_loss exp_name gpu_id status start_time end_time duration epochs best_epoch <<< "$best_result"
-    echo "🏆 Best learning rate: ${best_lr}"
+    IFS=',' read -r best_param best_final_loss best_val_loss exp_name gpu_id status start_time end_time duration epochs best_epoch <<< "$best_result"
+    echo "🏆 Best ${PARAMETER_NAME}: ${best_param}"
     echo "   Validation loss: ${best_val_loss}"
     echo "   Final training loss: ${best_final_loss}"
     echo "   Training duration: ${duration} minutes"
@@ -352,7 +464,8 @@ if [ -n "$best_result" ]; then
     echo "   Best model checkpoint: ${BASE_CHECKPOINT_DIR}/${exp_name}/best.pt"
     echo ""
     echo "🚀 To use this configuration:"
-    echo "   python src/train.py --config ${CONFIG_FILE} scheduler.max_learning_rate=${best_lr} optimizer.lr=${best_lr}"
+    local param_overrides=$(build_parameter_overrides "$best_param")
+    echo "   uv run -m src.train --config ${CONFIG_FILE}${param_overrides}"
 else
     echo "No successful experiments found"
 fi
@@ -360,11 +473,15 @@ fi
 # Summary statistics
 echo ""
 echo "=== SUMMARY STATISTICS ==="
+total_experiments=$(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | wc -l")
+completed_experiments=$(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | grep -c \"completed\"")
+failed_experiments=$(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | grep -c \"failed\"")
+total_duration=$(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | cut -d',' -f9 | awk '{sum+=\$1} END {print sum}'")
 
-echo "Total experiments: $(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | wc -l")"
-echo "Completed: $(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | grep -c \"completed\"")"
-echo "Failed: $(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | grep -c \"failed\"")"
-echo "Total training time: $(flock -s "${RESULTS_CSV}.lock" -c "tail -n +2 \"${RESULTS_CSV}\" | cut -d',' -f9 | awk '{sum+=\$1} END {print sum}'")"
+echo "Total experiments: $total_experiments"
+echo "Completed: $completed_experiments"
+echo "Failed: $failed_experiments"
+echo "Total training time: ${total_duration} minutes"
 
 if [ "$completed_experiments" -gt 0 ]; then
     avg_duration=$(echo "scale=1; $total_duration / $completed_experiments" | bc -l 2>/dev/null || echo "$total_duration")
@@ -374,6 +491,8 @@ fi
 echo ""
 echo "=== NEXT STEPS ==="
 echo "1. Analyze results: python analyze_results.py ${RESULTS_CSV}"
-echo "2. Train final model with best LR: python src/train.py --config ${CONFIG_FILE} scheduler.max_learning_rate=${best_lr} optimizer.lr=${best_lr}"
+if [ -n "$best_result" ]; then
+    local param_overrides=$(build_parameter_overrides "$best_param")
+    echo "2. Train final model with best ${PARAMETER_NAME}: uv run -m src.train --config ${CONFIG_FILE}${param_overrides}"
+fi
 echo "3. Clean up logs: rm -rf ${BASE_LOG_DIR}"
-echo "4. Clean up checkpoints: rm -rf ${BASE_CHECKPOINT_DIR}"
