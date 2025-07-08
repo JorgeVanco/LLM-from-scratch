@@ -23,7 +23,7 @@ from src.utils import (
 )
 from src.config import ExperimentConfig, ConfigManager
 
-
+torch.set_float32_matmul_precision('high')
 class Trainer:
     """Main trainer class for the LLM."""
 
