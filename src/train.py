@@ -85,6 +85,7 @@ class Trainer:
                     project=self.config.logging.wandb_project
                     or self.config.logging.project_name,
                     name=self.config.logging.run_name or self.config.experiment_name,
+                    tags=self.config.logging.tags,
                     config=self.config.__dict__,
                 )
                 self.use_wandb = True

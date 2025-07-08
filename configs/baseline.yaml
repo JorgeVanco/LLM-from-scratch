@@ -50,5 +50,6 @@ logging:
     run_name: "baseline"
     log_dir: "logs"
     checkpoint_dir: "checkpoints"
-    use_wandb: false
+    use_wandb: true
     wandb_project: "llm-from-scratch"
+    tags: []

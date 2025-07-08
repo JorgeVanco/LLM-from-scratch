@@ -91,6 +91,7 @@ class LoggingConfig:
     checkpoint_dir: str = "checkpoints"
     use_wandb: bool = False
     wandb_project: Optional[str] = None
+    tags: list = []
 
 
 @dataclass
@@ -224,5 +225,6 @@ class ConfigManager:
                 'checkpoint_dir': config.logging.checkpoint_dir,
                 'use_wandb': config.logging.use_wandb,
                 'wandb_project': config.logging.wandb_project,
+                'tags': config.logging.tags,
             }
         }
