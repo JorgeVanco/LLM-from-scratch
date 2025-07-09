@@ -237,6 +237,7 @@ class TransformerBlock(nn.Module):
         self.ln2 = RMSNorm(d_model)
         self.ffn = SwiGLU(d_model, d_ff)
         self.rope = rope is not None
+        self.post_norm: post_norm
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         position_encodings = torch.arange(x.shape[-2]) if self.rope else None
@@ -280,6 +281,7 @@ class TransformerLM(nn.Module):
         num_heads: int,
         d_ff: int,
         rope_theta: float,
+        post_norm: bool | None = False,
     ) -> None:
         super().__init__()
 
@@ -291,7 +293,7 @@ class TransformerLM(nn.Module):
         rope = RotaryPositionalEmbedding(rope_theta, d_k, context_length)
 
         self.layers = nn.ModuleList(
-            TransformerBlock(d_model, num_heads, d_ff, rope) for _ in range(num_layers)
+            TransformerBlock(d_model, num_heads, d_ff, rope, post_norm) for _ in range(num_layers)
         )
         self.ln_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
