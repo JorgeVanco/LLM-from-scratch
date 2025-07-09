@@ -8,6 +8,7 @@ import torch
 from tqdm import tqdm
 import itertools
 import json
+from dataclasses import asdict
 
 from src.model import TransformerLM
 from src.data_loading import load_dataset
@@ -152,13 +153,7 @@ class Trainer:
             self.config.model.vocab_size = actual_vocab_size
 
         self.model = TransformerLM(
-            vocab_size=self.config.model.vocab_size,
-            context_length=self.config.model.context_length,
-            num_layers=self.config.model.num_layers,
-            d_model=self.config.model.d_model,
-            num_heads=self.config.model.num_heads,
-            d_ff=self.config.model.d_ff,
-            rope_theta=self.config.model.rope_theta,
+            **asdict(self.config.model)
         )
 
         self.model = self.model.to(self.device)

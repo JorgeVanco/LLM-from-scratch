@@ -237,7 +237,7 @@ class TransformerBlock(nn.Module):
         self.ln2 = RMSNorm(d_model)
         self.ffn = SwiGLU(d_model, d_ff)
         self.rope = rope is not None
-        self.post_norm: post_norm
+        self.post_norm = post_norm
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         position_encodings = torch.arange(x.shape[-2]) if self.rope else None
