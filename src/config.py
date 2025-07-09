@@ -4,7 +4,7 @@ This module defines the configuration structure and provides utilities for loadi
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 import yaml
 import json
 from pathlib import Path
@@ -21,6 +21,7 @@ class ModelConfig:
     d_ff: int = 3072
     rope_theta: float | None = 10000.0
     post_norm: bool | None = False
+    ffn_type: Literal["swiglu", "silu"] = "swiglu"
 
 
 @dataclass
@@ -187,6 +188,7 @@ class ConfigManager:
                 'd_ff': config.model.d_ff,
                 'rope_theta': config.model.rope_theta,
                 'post_norm' : config.model.post_norm,
+                'ffn_type': config.model.ffn_type,
             },
             'optimizer': {
                 'name': config.optimizer.name,

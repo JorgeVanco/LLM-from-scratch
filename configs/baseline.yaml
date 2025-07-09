@@ -13,6 +13,7 @@ model:
     d_ff: 1344
     rope_theta: 10000.0
     post_norm: False
+    ffn_type: swiglu
 
 optimizer:
     name: "AdamW"

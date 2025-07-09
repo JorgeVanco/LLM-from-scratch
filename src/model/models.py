@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange, einsum
 from jaxtyping import Float, Int
+from typing import Literal
 from src.utils import softmax
 
 
@@ -93,6 +94,18 @@ class SwiGLU(nn.Module):
         silu_x = silu(self.w1(x))
         element_product = silu_x * self.w3(x)
         return self.w2(element_product)
+    
+
+class SiLUFFN(nn.Module):
+    def __init__(self, d_model: int, d_ff: int) -> None:
+        # d_ff should be 4 d_model
+        super().__init__()
+        self.w1 = Linear(d_model, d_ff)
+        self.w2 = Linear(d_ff, d_model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        silu_x = silu(self.w1(x))
+        return self.w2(silu_x)
 
 
 class RotaryPositionalEmbedding(nn.Module):
@@ -230,12 +243,13 @@ class TransformerBlock(nn.Module):
         d_ff: int,
         rope: RotaryPositionalEmbedding | None = None,
         post_norm: bool | None = False,
+        ffn_type: Literal["swiglu", "silu"] = "swiglu"
     ) -> None:
         super().__init__()
         self.ln1 = RMSNorm(d_model)
         self.attn = MultiHeadSelfAttention(d_model, num_heads, rope)
         self.ln2 = RMSNorm(d_model)
-        self.ffn = SwiGLU(d_model, d_ff)
+        self.ffn = SwiGLU(d_model, d_ff) if ffn_type == "swiglu" else SiLUFFN(d_model, d_ff)
         self.rope = rope is not None
         self.post_norm = post_norm
 
@@ -282,6 +296,7 @@ class TransformerLM(nn.Module):
         d_ff: int,
         rope_theta: float | None,
         post_norm: bool | None = False,
+        ffn_type: Literal["swiglu", "silu"] = "swiglu"
     ) -> None:
         super().__init__()
 
@@ -293,7 +308,7 @@ class TransformerLM(nn.Module):
         rope = RotaryPositionalEmbedding(rope_theta, d_k, context_length) if rope_theta is not None else None
 
         self.layers = nn.ModuleList(
-            TransformerBlock(d_model, num_heads, d_ff, rope, post_norm) for _ in range(num_layers)
+            TransformerBlock(d_model, num_heads, d_ff, rope, post_norm, ffn_type) for _ in range(num_layers)
         )
         self.ln_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
