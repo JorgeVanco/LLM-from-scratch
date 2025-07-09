@@ -25,6 +25,7 @@ Based on CS336 Language Modeling from Scratch Stanford course.
 - [Learning Rate Schedulers](#learning-rate-schedulers)
   - [Cosine Annealing with Warmup](#cosine-annealing-with-warmup)
 - [Data Loading](#data-loading)
+- [Hyperparameter Sweeps, Ablations and Architecture modifications](#hyperparameter-sweeps-ablations-and-architecture-modifications)
 
 ## Overview
 
@@ -552,3 +553,35 @@ dataloader = load_dataset(
     context_length=1024
 )
 ```
+
+
+## Hyperparameter Sweeps, Ablations and Architecture modifications
+
+### Learning Rate Sweep
+[Weights and biases report](https://api.wandb.ai/links/jorgev/0lxnzp8x)
+![imagen](https://github.com/user-attachments/assets/e4afa957-7428-4fb9-b908-a285770597e7)
+![imagen](https://github.com/user-attachments/assets/9d50d2d2-f411-47a7-9910-36b7f5d2f823)
+
+
+### Batch Size Sweep
+[Weights and biases report](https://api.wandb.ai/links/jorgev/mt2xp56c)
+![imagen](https://github.com/user-attachments/assets/2a99d917-f510-41ba-9b3d-245f09f81bf4)
+![imagen](https://github.com/user-attachments/assets/476021ca-1ede-4049-9884-9f51da0a0912)
+
+### Ablation 1: Layer Normalization
+Comparison between Pre-Norm, Post-Norm and No Norm.
+[Weights and biases report](https://api.wandb.ai/links/jorgev/fkc6udf9)
+![imagen](https://github.com/user-attachments/assets/9777a51a-6ed5-41f3-b954-ab308ecbdea9)
+
+### Ablation 2: Position Embeddings
+RoPE vs. NoPE (No Position Embeddings)
+[Weights and biases report](https://api.wandb.ai/links/jorgev/k5yi4it7)
+![imagen](https://github.com/user-attachments/assets/d4cf9fb3-383a-471c-91ee-7941a882dd23)
+![imagen](https://github.com/user-attachments/assets/490d5fa0-2e83-4fe7-b36f-b4ff6170190b)
+
+
+### Ablation 3: SwiGLU vs. SiLU
+[Weights and biases report](https://api.wandb.ai/links/jorgev/xzroxzij)
+![imagen](https://github.com/user-attachments/assets/1ef6cf7c-b328-4579-989a-e39735cee348)
+
+
