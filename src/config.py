@@ -20,6 +20,7 @@ class ModelConfig:
     num_heads: int = 12
     d_ff: int = 3072
     rope_theta: float = 10000.0
+    post_norm: bool | None = False
 
 
 @dataclass
@@ -185,6 +186,7 @@ class ConfigManager:
                 'num_heads': config.model.num_heads,
                 'd_ff': config.model.d_ff,
                 'rope_theta': config.model.rope_theta,
+                'post_norm' : config.model.post_norm,
             },
             'optimizer': {
                 'name': config.optimizer.name,

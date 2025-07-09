@@ -229,6 +229,7 @@ class TransformerBlock(nn.Module):
         num_heads: int,
         d_ff: int,
         rope: RotaryPositionalEmbedding | None = None,
+        post_norm: bool | None = False,
     ) -> None:
         super().__init__()
         self.ln1 = RMSNorm(d_model)
@@ -239,18 +240,34 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         position_encodings = torch.arange(x.shape[-2]) if self.rope else None
-        res = x
+        if self.post_norm is None:  # No norm
+            x = x + self.attn(x, position_encodings)
+            x = x + self.ffn(x)
+            return x
 
-        x = self.ln1(x)
-        x = self.attn(x, position_encodings)
-        x = res + x
+        elif self.post_norm:    # Post-norm
+            res = x
+            x = self.attn(x, position_encodings)
+            x = self.ln1(res + x)
 
-        res = x
+            res = x
+            x = self.ffn(x)
+            x = self.ln2(res + x)
+            return x
 
-        x = self.ln2(x)
-        x = self.ffn(x)
+        else:   # Pre-norm
+            res = x
 
-        return res + x
+            x = self.ln1(x)
+            x = self.attn(x, position_encodings)
+            x = res + x
+
+            res = x
+
+            x = self.ln2(x)
+            x = self.ffn(x)
+
+            return res + x
 
 
 class TransformerLM(nn.Module):
