@@ -19,7 +19,7 @@ class ModelConfig:
     d_model: int = 768
     num_heads: int = 12
     d_ff: int = 3072
-    rope_theta: float = 10000.0
+    rope_theta: float | None = 10000.0
     post_norm: bool | None = False
 
 

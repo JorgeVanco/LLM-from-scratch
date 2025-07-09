@@ -280,7 +280,7 @@ class TransformerLM(nn.Module):
         d_model: int,
         num_heads: int,
         d_ff: int,
-        rope_theta: float,
+        rope_theta: float | None,
         post_norm: bool | None = False,
     ) -> None:
         super().__init__()
@@ -290,7 +290,7 @@ class TransformerLM(nn.Module):
         self.token_embeddings = Embedding(vocab_size, d_model)
 
         d_k = d_model // num_heads
-        rope = RotaryPositionalEmbedding(rope_theta, d_k, context_length)
+        rope = RotaryPositionalEmbedding(rope_theta, d_k, context_length) if rope_theta is not None else None
 
         self.layers = nn.ModuleList(
             TransformerBlock(d_model, num_heads, d_ff, rope, post_norm) for _ in range(num_layers)
