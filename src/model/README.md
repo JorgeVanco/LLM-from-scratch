@@ -208,13 +208,15 @@ loss = loss_fn(logits.view(-1, logits.size(-1)), targets.view(-1))
 
 ### Batch Size Sweep
 [Weights and biases report](https://api.wandb.ai/links/jorgev/mt2xp56c)
-![imagen](https://github.com/user-attachments/assets/2a99d917-f510-41ba-9b3d-245f09f81bf4)
-![imagen](https://github.com/user-attachments/assets/476021ca-1ede-4049-9884-9f51da0a0912)
+<img width="1279" height="492" alt="imagen" src="https://github.com/user-attachments/assets/0a84d29a-3613-4e65-9137-eadc33380d55" />
+<img width="406" height="306" alt="imagen" src="https://github.com/user-attachments/assets/dd1cb37b-664d-4629-a78f-006132c3a33c" />
+
 
 ### Ablation 1: Layer Normalization
 Comparison between Pre-Norm, Post-Norm and No Norm.
 [Weights and biases report](https://api.wandb.ai/links/jorgev/fkc6udf9)
-![imagen](https://github.com/user-attachments/assets/9777a51a-6ed5-41f3-b954-ab308ecbdea9)
+<img width="1272" height="490" alt="imagen" src="https://github.com/user-attachments/assets/ad7b8d48-285a-4af5-bff2-34afb1c25939" />
+
 
 ### Ablation 2: Position Embeddings
 RoPE vs. NoPE (No Position Embeddings)
@@ -225,6 +227,6 @@ RoPE vs. NoPE (No Position Embeddings)
 
 ### Ablation 3: SwiGLU vs. SiLU
 [Weights and biases report](https://api.wandb.ai/links/jorgev/xzroxzij)
-![imagen](https://github.com/user-attachments/assets/1ef6cf7c-b328-4579-989a-e39735cee348)
+<img width="1271" height="486" alt="imagen" src="https://github.com/user-attachments/assets/90371066-6f88-4320-ae6c-a8a8de369588" />
 
 
