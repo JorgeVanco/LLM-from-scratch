@@ -61,7 +61,8 @@ class TrainingConfig:
     train_data_path: str
     
     batch_size: int = 16
-    max_iters: int = 100000
+    max_iters: int | None = None
+    max_tokens: int | None = None
     eval_interval: int = 1000
     eval_iters: int = 200
     log_interval: int = 100
@@ -207,6 +208,7 @@ class ConfigManager:
             'training': {
                 'batch_size': config.training.batch_size,
                 'max_iters': config.training.max_iters,
+                'max_tokens': config.training.max_tokens,
                 'eval_interval': config.training.eval_interval,
                 'eval_iters': config.training.eval_iters,
                 'log_interval': config.training.log_interval,

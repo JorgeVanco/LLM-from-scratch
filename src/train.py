@@ -287,12 +287,29 @@ class Trainer:
         except Exception as e:
             return f"Generation failed: {str(e)}"
 
+    def get_iters(self) -> int:
+
+        assert self.config.training.max_iters is not None or self.config.training.max_tokens is not None, "Must declare max_iters or max_tokens for training"
+
+        if self.config.training.max_iters is None:
+            return self.config.training.max_tokens // (self.config.training.batch_size * self.config.model.context_length)
+        
+        elif self.config.training.max_tokens is None:
+            return self.config.training.max_iters
+        
+        else:
+            return min(self.config.training.max_iters, self.config.training.max_tokens // (self.config.training.batch_size * self.config.model.context_length))
+
+
     def train(self) -> None:
         """Main training loop."""
         print("Starting training...")
-        print(f"Training for {self.config.training.max_iters:,} iterations")
+
+        max_iters: int = self.get_iters()
+
+        print(f"Training for {max_iters:,} iterations")
         print(
-            f"Total tokens: {self.config.training.max_iters * self.config.training.batch_size * self.config.model.context_length:,}"
+            f"Total tokens: {max_iters * self.config.training.batch_size * self.config.model.context_length:,}"
         )
 
         self.model.train()
@@ -301,7 +318,7 @@ class Trainer:
         train_iter = itertools.cycle(self.train_data)
 
         for iteration in tqdm(
-            range(self.current_iter, self.config.training.max_iters), position=0, leave=True
+            range(self.current_iter, max_iters), position=0, leave=True
         ):
             self.current_iter = iteration
 
@@ -360,7 +377,7 @@ class Trainer:
             if (
                 iteration % self.config.training.eval_interval == 0
                 and iteration > 0
-                or iteration == self.config.training.max_iters - 1
+                or iteration == max_iters - 1
             ) and self.val_data is not None:
                 losses = self.estimate_loss(use_whole_dataset= False)
 
@@ -395,7 +412,7 @@ class Trainer:
                 self.save_checkpoint(iteration)
 
         print("Training completed!")
-        self.save_checkpoint(self.config.training.max_iters)
+        self.save_checkpoint(max_iters)
 
         results = {
             "final_loss": float(losses["val"]),
