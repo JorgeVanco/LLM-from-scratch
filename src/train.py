@@ -312,6 +312,10 @@ class Trainer:
             f"Total tokens: {max_iters * self.config.training.batch_size * self.config.model.context_length:,}"
         )
 
+        # Automatically extend cosine cycle iters to end of training
+        if self.config.scheduler.cosine_cycle_iters is None:
+            self.config.scheduler.cosine_cycle_iters = max_iters
+
         self.model.train()
         start_time = time.time()
 

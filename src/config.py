@@ -47,7 +47,7 @@ class SchedulerConfig:
     max_learning_rate: float = 3e-4
     min_learning_rate: float = 3e-5
     warmup_iters: int = 2000
-    cosine_cycle_iters: int = 50000
+    cosine_cycle_iters: int | None = None
     
     def __post_init__(self):
         self.max_learning_rate = float(self.max_learning_rate)
