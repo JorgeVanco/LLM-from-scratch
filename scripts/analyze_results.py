@@ -159,7 +159,10 @@ def create_analysis_plots(df, parameter_name, output_dir="."):
         ax4.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    output_path = Path(output_dir) / f'{parameter_name}_search_analysis.png'
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f'{parameter_name}_search_analysis.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"Analysis plot saved as '{output_path}'")
     plt.close()
@@ -311,7 +314,7 @@ def print_detailed_analysis(df, parameter_name):
 def main():
     parser = argparse.ArgumentParser(description='Analyze hyperparameter search results')
     parser.add_argument('csv_file', help='Path to the results CSV file')
-    parser.add_argument('--output-dir', default='.', help='Output directory for plots')
+    parser.add_argument('--output-dir', default='./search_analysis_results', help='Output directory for plots')
     parser.add_argument('--no-plots', action='store_true', help='Skip plot generation')
     
     args = parser.parse_args()

@@ -16,3 +16,4 @@ wandb/
 checkpoints/
 /tokenizer/
 profiler_output/
+search_analysis_results/
