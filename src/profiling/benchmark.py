@@ -1,4 +1,6 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import torch.cuda.nvtx as nvtx
 import numpy as np
 import pandas as pd
@@ -121,6 +123,36 @@ def simple_benchmark(args, output_path='benchmark.csv') -> None:
 
         df = pd.read_csv(output_path, index_col=False)
         print(df.to_markdown())
+        
+class ToyModel(nn.Module):
+    def __init__(self, in_features: int, out_features: int):
+        super().__init__()
+        self.fc1 = nn.Linear(in_features, 10, bias=False)
+        self.ln = nn.LayerNorm(10)
+        self.fc2 = nn.Linear(10, out_features, bias=False)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.relu(self.fc1(x))
+        print("dtype after fc1:", x.dtype)
+        x = self.ln(x)
+        print("dtype after LayerNorm:", x.dtype)
+        x = self.fc2(x)
+        print("dtype after fc2:", x.dtype)
+        return x        
+
+def test_autocast() -> None:
+    model = ToyModel(10, 5).to('cuda')
+    x = torch.randn(2, 10).to('cuda')
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        output = model(x)
+        cross_entropy = F.cross_entropy(output, torch.tensor([1, 2], device='cuda', dtype=torch.int64))
+        cross_entropy.backward()
+        print("Output:", output.dtype)
+        print("Loss:", cross_entropy.dtype)
+        for name, param in model.named_parameters():
+            print(f"Parameter {name} has dtype {param.dtype} and gradient dtype {param.grad.dtype}")
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmarking script for BasicsTransformerLM")
