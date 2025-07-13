@@ -27,6 +27,8 @@ def benchmark_model(model, warmup_steps=5, benchmark_steps=10) -> tuple[tuple[np
     for _ in range(warmup_steps):
         batch = get_random_batch()
         model(batch[0])
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
         
     times_forward = np.zeros(benchmark_steps)
     times_backward = np.zeros(benchmark_steps)
@@ -35,14 +37,16 @@ def benchmark_model(model, warmup_steps=5, benchmark_steps=10) -> tuple[tuple[np
         batch = get_random_batch()
         start_time = timeit.default_timer()
         logits = model(batch[0])
-        torch.cuda.synchronize()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         elapsed = timeit.default_timer() - start_time
         times_forward[i] = elapsed
         
         loss = cross_entropy(logits.view(-1, logits.size(-1)), batch[1].view(-1))
         start_time = timeit.default_timer()
         loss.backward()
-        torch.cuda.synchronize()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         elapsed = timeit.default_timer() - start_time
         times_backward[i] = elapsed
         
