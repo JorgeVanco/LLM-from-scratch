@@ -53,17 +53,7 @@ def benchmark_model(model, warmup_steps=5, benchmark_steps=10) -> tuple[tuple[np
         
     return (times_forward.mean(), times_forward.std()), (times_backward.mean(), times_backward.std())
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Benchmarking script for BasicsTransformerLM")
-    parser.add_argument("--d_model", type=int, default=768)
-    parser.add_argument("--d_ff", type=int, default=3072)
-    parser.add_argument("--num_layers", type=int, default=12)
-    parser.add_argument("--num_heads", type=int, default=12)
-    parser.add_argument("--warmup_steps", type=int, default=5)
-    parser.add_argument("--benchmark_steps", type=int, default=10)
-    
-    args = parser.parse_args()
-    output_path = 'benchmark.csv'
+def simple_benchmark(args, output_path='benchmark.csv') -> None:
     for model_args in [(768, 3072, 12, 12), (1024, 4096, 24, 16)]:#, (1280, 5120, 36, 20), (1600, 6400, 48, 25), (2560, 10240, 32, 32)]:
         args.d_model, args.d_ff, args.num_layers, args.num_heads = model_args
         print(f"Benchmarking model with d_model={args.d_model}, d_ff={args.d_ff}, num_heads={args.num_heads}, num_layers={args.num_layers}")
@@ -91,6 +81,20 @@ if __name__ == "__main__":
             "std_time_backward": [std_time_backward]
         })
         df.to_csv(output_path, mode='a', header=not os.path.exists(output_path), index=False)
-        
-    df = pd.read_csv(output_path, index_col=False)
-    print(df.to_markdown())
+            
+        df = pd.read_csv(output_path, index_col=False)
+        print(df.to_markdown())
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Benchmarking script for BasicsTransformerLM")
+    parser.add_argument("--d_model", type=int, default=768)
+    parser.add_argument("--d_ff", type=int, default=3072)
+    parser.add_argument("--num_layers", type=int, default=12)
+    parser.add_argument("--num_heads", type=int, default=12)
+    parser.add_argument("--warmup_steps", type=int, default=5)
+    parser.add_argument("--benchmark_steps", type=int, default=10)
+    
+    args = parser.parse_args()
+    output_path = 'benchmark.csv'
+    simple_benchmark(args, output_path)
+    
