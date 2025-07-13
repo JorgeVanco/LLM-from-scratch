@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.cuda.nvtx as nvtx
+from torch.profiler import profile, record_function, ProfilerActivity
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -11,6 +12,15 @@ from contextlib import nullcontext
 
 from src.model import TransformerLM
 from src.utils import cross_entropy
+
+configs = {
+    'small': {'d_model': 768, 'num_layers': 12, 'num_heads': 12},
+    'medium': {'d_model': 1024, 'num_layers': 24, 'num_heads': 16},
+    'large': {'d_model': 1280, 'num_layers': 36, 'num_heads': 20},
+    'xl': {'d_model': 1600, 'num_layers': 48, 'num_heads': 25},
+    '2.7B': {'d_model': 2560, 'num_layers': 32, 'num_heads': 32},
+}
+
 
 @nvtx.range("Initialize model")
 def initialize_model(args, device='cuda') -> TransformerLM:
@@ -153,6 +163,51 @@ def test_autocast() -> None:
         for name, param in model.named_parameters():
             print(f"Parameter {name} has dtype {param.dtype} and gradient dtype {param.grad.dtype}")
         
+def memory_profile(model, warmup_steps=5, benchmark_steps=10, mixed_precision=False, backward=True) -> None:
+    output_path = Path("profiler_output/memory_snapshot.pickle")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    device = 'cuda:0'
+    
+    grad = nullcontext() if backward else torch.no_grad()
+    mp = torch.autocast("cuda", dtype=torch.bfloat16) if mixed_precision else nullcontext()
+    if backward:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    with grad:
+        with mp: 
+            with profile(
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                    torch.profiler.ProfilerActivity.CUDA,
+                ],
+                schedule=torch.profiler.schedule(wait=0, warmup=warmup_steps, active=benchmark_steps, repeat=1),
+                experimental_config=torch._C._profiler._ExperimentalConfig(verbose=True),
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+            ) as p:
+                for i in range(benchmark_steps + warmup_steps):
+                    if i == warmup_steps:
+                        # Start recording memory history.
+                        torch.cuda.memory._record_memory_history(max_entries=1000000)
+                    if backward:
+                        optimizer.zero_grad()
+                        
+                    batch = get_random_batch()
+                    logits = model(batch[0])
+                    
+                    if backward:
+                        loss = cross_entropy(logits.view(-1, logits.size(-1)), batch[1].view(-1))
+                        loss.backward()
+                        
+                        optimizer.step()
+                    p.step()
+        
+    # Save a pickle file to be loaded by PyTorch's online tool.
+    torch.cuda.memory._dump_snapshot(output_path)
+    
+    # Stop recording history.
+    torch.cuda.memory._record_memory_history(enabled=None)
+    p.export_memory_timeline("profiler_output/memory_timeline.html", device=device)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmarking script for BasicsTransformerLM")
@@ -162,9 +217,13 @@ if __name__ == "__main__":
     parser.add_argument("--num_heads", type=int, default=12)
     parser.add_argument("--warmup_steps", type=int, default=5)
     parser.add_argument("--benchmark_steps", type=int, default=10)
-    parser.add_argument("--mixed_precision", type=bool, default=False, help="Use mixed precision for benchmarking")
-    
+    parser.add_argument("--mixed_precision",action="store_true", help="Use mixed precision for benchmarking")
+    parser.add_argument("--no_backward", action="store_true", help="Benchmark backward pass if True")
+
     args = parser.parse_args()
     output_path = 'profiler_output/benchmark.csv'
-    simple_benchmark(args, output_path)
+    # simple_benchmark(args, output_path)
+    model = initialize_model(args)
+
+    memory_profile(model, args.warmup_steps, args.benchmark_steps, args.mixed_precision, not args.no_backward)
     
