@@ -7,7 +7,9 @@ import numpy as np
 from src.utils import cross_entropy
 import pandas as pd
 import os
+import torch.cuda.nvtx as nvtx
 
+@nvtx.range("Initialize model")
 def initialize_model(args, device='cuda') -> TransformerLM:
     model = TransformerLM(
         d_model=args.d_model,
@@ -52,6 +54,31 @@ def benchmark_model(model, warmup_steps=5, benchmark_steps=10) -> tuple[tuple[np
         
         
     return (times_forward.mean(), times_forward.std()), (times_backward.mean(), times_backward.std())
+
+def benchmark_model_nsys(model, warmup_steps=5, benchmark_steps=10) -> None:
+    with nvtx.range("Warmup"):
+        for _ in range(warmup_steps):
+            batch = get_random_batch()
+            model(batch[0])
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    torch.cuda.cudart().cudaProfilerStart()
+
+    for i in range(benchmark_steps):
+        nvtx.range_push(f"Benchmark step {i+1}")
+        with nvtx.range("Get random batch"):
+            batch = get_random_batch()
+
+        with nvtx.range("Forward pass"):
+            logits = model(batch[0])
+
+        with nvtx.range("Computing loss"):
+            loss = cross_entropy(logits.view(-1, logits.size(-1)), batch[1].view(-1))
+
+        with nvtx.range("Backward pass"):
+            loss.backward()
+
+        nvtx.range_pop()
 
 def simple_benchmark(args, output_path='benchmark.csv') -> None:
     for model_args in [(768, 3072, 12, 12), (1024, 4096, 24, 16)]:#, (1280, 5120, 36, 20), (1600, 6400, 48, 25), (2560, 10240, 32, 32)]:
