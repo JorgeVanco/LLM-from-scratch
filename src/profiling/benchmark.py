@@ -1,4 +1,5 @@
 from html import parser
+from pathlib import Path
 import timeit
 from src.model import TransformerLM
 import argparse
@@ -107,8 +108,12 @@ def simple_benchmark(args, output_path='benchmark.csv') -> None:
             "mean_time_backward": [mean_time_backward],
             "std_time_backward": [std_time_backward]
         })
-        df.to_csv(output_path, mode='a', header=not os.path.exists(output_path), index=False)
-            
+        
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        df.to_csv(output_path, mode='a', header=not output_path.exists(), index=False)
+
         df = pd.read_csv(output_path, index_col=False)
         print(df.to_markdown())
 
@@ -122,6 +127,6 @@ if __name__ == "__main__":
     parser.add_argument("--benchmark_steps", type=int, default=10)
     
     args = parser.parse_args()
-    output_path = 'benchmark.csv'
+    output_path = 'profiler_output/benchmark.csv'
     simple_benchmark(args, output_path)
     
