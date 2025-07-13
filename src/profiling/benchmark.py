@@ -208,6 +208,9 @@ def memory_profile(model, warmup_steps=5, benchmark_steps=10, mixed_precision=Fa
     # Stop recording history.
     torch.cuda.memory._record_memory_history(enabled=None)
     p.export_memory_timeline("profiler_output/memory_timeline.html", device=device)
+    
+    print(f"torch.cuda.memory_allocated(0): {torch.cuda.memory_allocated(0)/ (1024**2)} MiB")
+    print(f"torch.cuda.max_memory_allocated(0): {torch.cuda.max_memory_allocated(0)/ (1024**3)} GiB")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmarking script for BasicsTransformerLM")
