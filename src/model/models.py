@@ -140,7 +140,7 @@ def scaled_dot_product_attention(
     keys: torch.Tensor,
     values: torch.Tensor,
     mask: None | torch.Tensor,
-) -> None:
+) -> torch.Tensor:
 
     pre_softmax_values = einsum(
         queries,
