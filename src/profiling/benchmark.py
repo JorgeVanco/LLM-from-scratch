@@ -11,6 +11,7 @@ import argparse
 from contextlib import nullcontext
 
 from src.model import TransformerLM
+from src.model.models import scaled_dot_product_attention
 from src.utils import cross_entropy
 
 configs = {
@@ -212,6 +213,67 @@ def memory_profile(model, warmup_steps=5, benchmark_steps=10, mixed_precision=Fa
     print(f"torch.cuda.memory_allocated(0): {torch.cuda.memory_allocated(0)/ (1024**2)} MiB")
     print(f"torch.cuda.max_memory_allocated(0): {torch.cuda.max_memory_allocated(0)/ (1024**3)} GiB")
 
+def profile_attention() -> None:
+    output_path = Path("profiler_output/attention_profile.csv")
+    for d_head in [16, 32, 64, 128]:
+        for seq_len in [256, 1024, 4096, 8192, 16384]:
+            Q = torch.randn(8, seq_len, d_head, device='cuda', requires_grad=True) # Batch size, sequence length, head dimension
+            K = torch.randn(8, seq_len, d_head, device='cuda', requires_grad=True)
+            V = torch.randn(8, seq_len, d_head, device='cuda', requires_grad=True)
+            try:
+                # Warmup iterations
+                for _ in range(10):
+                    output = scaled_dot_product_attention(Q, K, V, ~torch.triu(torch.ones(seq_len, seq_len, device=Q.device), diagonal=1).bool())
+
+                del output
+                torch.cuda.reset_max_memory_allocated(0)
+                torch.cuda.synchronize()  # Ensure all operations are complete before timing
+                
+                forward_times = []
+                backward_times = []
+                for _ in range(100):
+                    start_time = timeit.default_timer()
+                    output = scaled_dot_product_attention(Q, K, V,~torch.triu(torch.ones(seq_len, seq_len, device=Q.device), diagonal=1).bool())
+                    torch.cuda.synchronize()
+                    elapsed = timeit.default_timer() - start_time
+                    forward_times.append(elapsed)
+                max_memory = torch.cuda.max_memory_allocated(0) / (1024**2)  # Convert to MiB
+                loss = output.sum()
+                for _ in range(100):
+                    for param in [Q, K, V]:
+                        param.grad = None  # Clear gradients
+                    torch.cuda.synchronize()
+                    start_time = timeit.default_timer()
+                    loss.backward(retain_graph=True)
+                    torch.cuda.synchronize()
+                    elapsed = timeit.default_timer() - start_time
+                    backward_times.append(elapsed)
+                forward_mean = np.mean(forward_times)
+                forward_std = np.std(forward_times)
+                backward_mean = np.mean(backward_times)
+                backward_std = np.std(backward_times)
+            except torch.cuda.OutOfMemoryError:
+                forward_mean = np.nan
+                forward_std = np.nan
+                backward_mean = np.nan
+                backward_std = np.nan
+                max_memory = torch.cuda.max_memory_allocated(0) / (1024**2)
+            
+            df = pd.DataFrame({
+                "d_head": [d_head],
+                "seq_len": [seq_len],
+                "forward_mean": [forward_mean],
+                "forward_std": [forward_std],
+                "backward_mean": [backward_mean],
+                "backward_std": [backward_std],
+                "max_memory (MiB)": [max_memory]
+            })
+            df.to_csv(output_path, mode='a', header=not output_path.exists(), index=False)
+            print(f"Profiled attention with d_head={d_head}, seq_len={seq_len}")
+            df = pd.read_csv(output_path, index_col=False)
+            print(df.to_markdown())
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmarking script for BasicsTransformerLM")
     parser.add_argument("--d_model", type=int, default=768)
@@ -226,7 +288,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     output_path = 'profiler_output/benchmark.csv'
     # simple_benchmark(args, output_path)
-    model = initialize_model(args)
 
-    memory_profile(model, args.warmup_steps, args.benchmark_steps, args.mixed_precision, not args.no_backward)
+    # model = initialize_model(args)
+    # memory_profile(model, args.warmup_steps, args.benchmark_steps, args.mixed_precision, not args.no_backward)
+    
+    profile_attention()
     
