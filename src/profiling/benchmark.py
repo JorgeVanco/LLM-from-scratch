@@ -34,6 +34,8 @@ def initialize_model(args, device='cuda') -> TransformerLM:
         context_length=128,  # Example sequence length,
         rope_theta=10000.0,  # Example rope theta
     ).to(device)
+    if args.compile:
+        model = torch.compile(model, fullgraph=True, dynamic=True)
     return model
 
 def get_random_batch(vocab_size=10000, batch_size=4, seq_length=128, device='cuda') -> torch.Tensor:
@@ -213,7 +215,9 @@ def memory_profile(model, warmup_steps=5, benchmark_steps=10, mixed_precision=Fa
     print(f"torch.cuda.memory_allocated(0): {torch.cuda.memory_allocated(0)/ (1024**2)} MiB")
     print(f"torch.cuda.max_memory_allocated(0): {torch.cuda.max_memory_allocated(0)/ (1024**3)} GiB")
 
-def profile_attention() -> None:
+def profile_attention(compile: bool = False) -> None:
+    if compile:
+        scaled_dot_product_attention = torch.compile(scaled_dot_product_attention, fullgraph=True, dynamic=True)
     output_path = Path("profiler_output/attention_profile.csv")
     for d_head in [16, 32, 64, 128]:
         for seq_len in [256, 1024, 4096, 8192, 16384]:
@@ -260,6 +264,7 @@ def profile_attention() -> None:
                 max_memory = torch.cuda.max_memory_allocated(0) / (1024**2)
             
             df = pd.DataFrame({
+                "compile": [compile],
                 "d_head": [d_head],
                 "seq_len": [seq_len],
                 "forward_mean": [forward_mean],
@@ -284,7 +289,7 @@ if __name__ == "__main__":
     parser.add_argument("--benchmark_steps", type=int, default=10)
     parser.add_argument("--mixed_precision",action="store_true", help="Use mixed precision for benchmarking")
     parser.add_argument("--no_backward", action="store_true", help="Benchmark backward pass if True")
-
+    parser.add_argument("--compile", action="store_true", help="Compile the model with torch.compile")
     args = parser.parse_args()
     output_path = 'profiler_output/benchmark.csv'
     # simple_benchmark(args, output_path)
@@ -292,5 +297,5 @@ if __name__ == "__main__":
     # model = initialize_model(args)
     # memory_profile(model, args.warmup_steps, args.benchmark_steps, args.mixed_precision, not args.no_backward)
     
-    profile_attention()
+    profile_attention(args.compile)
     
