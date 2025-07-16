@@ -1,1 +1,1 @@
-from .ddp import DDPIndividualParameters
+from .ddp import DDPIndividualParameters, DDPBucketed
