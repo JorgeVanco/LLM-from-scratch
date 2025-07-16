@@ -18,6 +18,12 @@
             "module": "src.tokenizer.bpe"
         },
         {
+            "name": "data loading",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.data_loading.data_loading"
+        },
+        {
             "name": "generate text",
             "type": "debugpy",
             "request": "launch",
