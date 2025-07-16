@@ -49,7 +49,6 @@ class DDPIndividualParameters(torch.nn.Module):
     def __init__(self, module: torch.nn.Module) -> None:
         super().__init__()
         self.module = module
-        self.device = next(module.parameters()).device
         self.handles = []
         world_size = dist.get_world_size()
         
