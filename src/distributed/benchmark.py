@@ -30,11 +30,11 @@ def all_reduce_benchmark_process(rank, world_size, backend, output_path: str, wa
     if backend == "nccl":
         torch.cuda.set_device(rank)
     
-    
+    device = torch.device('cuda' if backend == "nccl" else 'cpu')
     for i in [1024**2 // 4, 1024**2 * 10 // 4, 1024**2 * 100 // 4, 1024**3 // 4]:
         times = []
         for j in range(warmup_steps + benchmark_steps):
-            data = torch.randn(i, dtype=torch.float32, device='cuda' if backend == "nccl" else 'cpu')
+            data = torch.randn(i, dtype=torch.float32, device=device)
             if backend == "nccl":
                 torch.cuda.synchronize()
             t0 = timeit.default_timer()
@@ -43,11 +43,11 @@ def all_reduce_benchmark_process(rank, world_size, backend, output_path: str, wa
                 torch.cuda.synchronize()
             t1 = timeit.default_timer()
             if j >= warmup_steps:
-                elapsed = torch.tensor(t1 - t0)
+                elapsed = torch.tensor(t1 - t0).to(device)
                 dist.all_reduce(elapsed, op=dist.ReduceOp.SUM ,async_op=False)
                 elapsed /= world_size
                 times.append(elapsed.item())
-            
+
         if rank == 0:
             data_size = data.element_size() * data.nelement() / 1024**2
             print(f"rank {rank} data size: {data_size}, time taken for all-reduce: {elapsed:.6f} seconds")
@@ -77,7 +77,7 @@ def ddp_individual_parameters_benchmark(rank: int, world_size: int, backend: str
     train_step_times = []
     sync_times = []
     for i in range(warmup_steps + benchmark_steps):
-        batch = get_random_batch(10000, 32, 256, device=device)
+        batch = get_random_batch(10000, 4, 256, device=device)
         t0 = timeit.default_timer()
         logits = ddp_model(batch[0])
         loss = cross_entropy(logits.view(-1, logits.size(-1)), batch[1].view(-1))
