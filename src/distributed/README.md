@@ -16,3 +16,28 @@ The results for the simple `Individual DDP` benchmark.
 |    | model_size   | backend   |   time_per_step |   std_time_step |   time_per_sync |   std_time_sync |   fraction_sync |
 |---:|:-------------|:----------|----------------:|----------------:|----------------:|----------------:|----------------:|
 |  0 | xl           | nccl      |        0.408564 |     0.000637803 |       0.0102613 |     0.000398993 |       0.0251155 |
+|  1 | xl           | nccl      |        0.408698 |     0.00116798  |       0.0094661 |     7.51691e-05 |       0.0231616 |
+
+Run 0 had the following implementation of the gradient synchronization:
+```python
+def finish_gradient_synchronization(self) -> None:
+    for param in self.module.parameters():
+        if param.requires_grad:
+            param.grad.data /= dist.get_world_size()
+            dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+```
+
+Run 1 had the following implementation of the gradient synchronization:
+```python
+def finish_gradient_synchronization(self) -> None:
+    params = [param.grad.data / dist.get_world_size() for param in self.module.parameters() if param.requires_grad]
+    params_flatten = torch._utils._flatten_dense_tensors(params)
+    dist.all_reduce(params_flatten, op=dist.ReduceOp.SUM)
+    params_unflatten = torch._utils._unflatten_dense_tensors(params_flatten, params)
+    
+    i = 0
+    for param in self.module.parameters():
+        if param.requires_grad:
+            param.grad.data = params_unflatten[i]
+            i += 1
+```
