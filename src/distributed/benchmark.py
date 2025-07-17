@@ -115,13 +115,15 @@ def ddp_bucketed_benchmark(rank: int, world_size: int, backend: str, output_path
     if backend == "nccl":
         torch.cuda.set_device(rank)
     device = torch.device('cuda' if backend == "nccl" else 'cpu')
-    model = TransformerLM(**configs['xl'], vocab_size=10000, context_length=256, rope_theta=10000).to(device)
 
     for bucket_size_mb in [1, 10, 100, 1000]:
         if rank == 0:
             print(f"Running DDPBucketed with bucket size: {bucket_size_mb} MB")
-        ddp_model = DDPBucketed(model, bucket_size_mb=bucket_size_mb)
 
+        model = TransformerLM(**configs['xl'], vocab_size=10000, context_length=256, rope_theta=10000).to(device)
+        ddp_model = DDPBucketed(model, bucket_size_mb=bucket_size_mb)
+        del model
+        
         if backend == "nccl":
             torch.cuda.synchronize()
 
@@ -145,6 +147,8 @@ def ddp_bucketed_benchmark(rank: int, world_size: int, backend: str, output_path
             if i >= warmup_steps:
                 train_step_times.append(elapsed)
                 sync_times.append(elapsed_sync)
+        
+        del ddp_model
         if rank == 0:
             if type(output_path) is str:
                 output_path = Path(output_path)
@@ -160,7 +164,6 @@ def ddp_bucketed_benchmark(rank: int, world_size: int, backend: str, output_path
                 "fraction_sync": [np.mean(sync_times) / np.mean(train_step_times)],
             })
             df.to_csv(output_path, mode='a', header=not output_path.exists(), index=False)
-
 
 def run_all_reduce_benchmark() -> None:
     """
