@@ -67,3 +67,12 @@ class DDPIndividualParameters(torch.nn.Module):
             handle.wait()
         self.handles.clear()
 ```
+
+The following table compares the different bucket sizes for `DDPBucketed`.
+
+|    | model_size   | backend   |   bucket_size_mb |   time_per_step |   std_time_step |   time_per_sync |   std_time_sync |   fraction_sync |
+|---:|:-------------|:----------|-----------------:|----------------:|----------------:|----------------:|----------------:|----------------:|
+|  1 | xl           | nccl      |                1 |        0.407966 |     0.00176379  |      0.00343642 |     0.000280244 |      0.0084233  |
+|  2 | xl           | nccl      |               10 |        0.408091 |     0.00107937  |      0.0028409  |     0.000176692 |      0.00696143 |
+|  3 | xl           | nccl      |              100 |        0.416307 |     0.0263888   |      0.00205889 |     0.000168305 |      0.00494561 |
+|  4 | xl           | nccl      |             1000 |        0.40826  |     0.00101217  |      0.00147433 |     7.44453e-05 |      0.00361125 |
