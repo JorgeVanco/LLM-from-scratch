@@ -1,1 +1,1 @@
-from .optimizers import SGD, AdamW, Muon
+from .optimizers import SGD, AdamW, Muon, MuonWithAuxAdam

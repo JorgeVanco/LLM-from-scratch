@@ -27,7 +27,7 @@ class ModelConfig:
 @dataclass
 class OptimizerConfig:
     """Configuration for the optimizer."""
-    name: str = "AdamW"  # "AdamW" or "SGD"
+    name: str = "AdamW"  # "AdamW" or "SGD" or "Muon"
     lr: float = 3e-4
     betas: tuple[float, float] = (0.9, 0.95)
     eps: float = 1e-8

@@ -12,7 +12,7 @@ from dataclasses import asdict
 
 from src.model import TransformerLM
 from src.data_loading import load_dataset
-from src.optimizers import SGD, AdamW
+from src.optimizers import SGD, AdamW, Muon, MuonWithAuxAdam
 from src.schedulers import learning_rate_cosine
 from src.tokenizer import Tokenizer, load_tokenizer
 from src.utils import (
@@ -185,6 +185,17 @@ class Trainer:
             )
         elif self.config.optimizer.name.lower() == "sgd":
             self.optimizer = SGD(self.model.parameters(), lr=self.config.optimizer.lr)
+        elif self.config.optimizer.name.lower() == "muon":          
+            hidden_matrix_params = [p for n, p in self.model.layers.named_parameters() if p.ndim >= 2 and "embed" not in n]
+            embed_params = [p for n, p in self.model.named_parameters() if "embed" in n]
+            scalar_params = [p for p in self.model.parameters() if p.ndim < 2]
+            head_params = [self.model.lm_head.weight]
+
+            adam_groups = [dict(params=head_params, lr=0.22), dict(params=embed_params, lr=0.6), dict(params=scalar_params, lr=0.04)]
+            adam_groups = [dict(**g, betas=(0.8, 0.95), eps=1e-10, use_muon=False) for g in adam_groups]
+            muon_group = dict(params=hidden_matrix_params, lr=0.05, momentum=0.95, use_muon=True)
+            param_groups = [*adam_groups, muon_group]
+            self.optimizer = MuonWithAuxAdam(param_groups)
         else:
             raise ValueError(f"Unknown optimizer: {self.config.optimizer.name}")
 
