@@ -174,31 +174,32 @@ class Trainer:
 
     def setup_optimizer(self) -> None:
         """Setup optimizer and scheduler."""
-        print(f"Setting up {self.config.optimizer.name} optimizer...")
+        optimizer_config = self.config.optimizer
+        print(f"Setting up {optimizer_config.name} optimizer...")
 
-        if self.config.optimizer.name.lower() == "adamw":
+        if optimizer_config.name.lower() == "adamw":
             self.optimizer = AdamW(
                 self.model.parameters(),
-                lr=self.config.optimizer.lr,
-                betas=self.config.optimizer.betas,
-                eps=self.config.optimizer.eps,
-                weight_decay=self.config.optimizer.weight_decay,
+                lr=optimizer_config.lr,
+                betas=optimizer_config.betas,
+                eps=optimizer_config.eps,
+                weight_decay=optimizer_config.weight_decay,
             )
-        elif self.config.optimizer.name.lower() == "sgd":
-            self.optimizer = SGD(self.model.parameters(), lr=self.config.optimizer.lr)
-        elif self.config.optimizer.name.lower() == "muon":          
+        elif optimizer_config.name.lower() == "sgd":
+            self.optimizer = SGD(self.model.parameters(), lr=optimizer_config.lr)
+        elif optimizer_config.name.lower() == "muon":
             hidden_matrix_params = [p for n, p in self.model.layers.named_parameters() if p.ndim >= 2 and "embed" not in n]
             embed_params = [p for n, p in self.model.named_parameters() if "embed" in n]
             scalar_params = [p for p in self.model.parameters() if p.ndim < 2]
             head_params = [self.model.lm_head.weight]
 
-            adam_groups = [dict(params=head_params, lr=0.22), dict(params=embed_params, lr=0.6), dict(params=scalar_params, lr=0.04)]
-            adam_groups = [dict(**g, betas=(0.8, 0.95), eps=1e-10, use_muon=False) for g in adam_groups]
-            muon_group = dict(params=hidden_matrix_params, lr=0.05, momentum=0.95, use_muon=True)
+            adam_groups = [dict(params=head_params), dict(params=embed_params), dict(params=scalar_params)]
+            adam_groups = [dict(**g, betas=optimizer_config.betas, eps=1e-10, use_muon=False, lr=optimizer_config.lr) for g in adam_groups]
+            muon_group = dict(params=hidden_matrix_params, lr=optimizer_config.muon_lr, momentum=optimizer_config.muon_momentum, use_muon=True)
             param_groups = [*adam_groups, muon_group]
             self.optimizer = MuonWithAuxAdam(param_groups)
         else:
-            raise ValueError(f"Unknown optimizer: {self.config.optimizer.name}")
+            raise ValueError(f"Unknown optimizer: {optimizer_config.name}")
         
         for group in self.optimizer.param_groups:
             group["initial_lr"] = group["lr"]
@@ -378,7 +379,10 @@ class Trainer:
                     * self.config.model.context_length
                 )
                 tokens_per_sec = tokens_processed / elapsed
-
+                
+                if self.config.scheduler.use_multiplier:
+                    lr = lr * self.config.optimizer.lr
+                
                 metrics = {
                     "train/loss": loss.item(),
                     "train/lr": lr,

@@ -33,10 +33,16 @@ class OptimizerConfig:
     eps: float = 1e-8
     weight_decay: float = 0.1
     
+    # Muon fields
+    muon_lr: float = 0.05
+    muon_momentum: float = 0.95
+    
     def __post_init__(self) -> None:
         self.lr = float(self.lr)
         self.eps = float(self.eps)
         self.weight_decay = float(self.weight_decay)
+        self.muon_lr = float(self.muon_lr)
+        self.muon_momentum = float(self.muon_momentum)
         
 
 
