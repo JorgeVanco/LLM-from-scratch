@@ -13,12 +13,7 @@ from dataclasses import asdict
 from src.model import TransformerLM
 from src.data_loading import load_dataset
 from src.optimizers import SGD, AdamW, Muon, MuonWithAuxAdam
-from src.schedulers import (
-    learning_rate_cosine,
-    learning_rate_multiplier_cosine,
-    learning_rate_multiplier_warmup_stable_decay,
-    learning_rate_warmup_stable_decay,
-)
+from src.schedulers import get_scheduler
 from src.tokenizer import Tokenizer, load_tokenizer
 from src.utils import (
     cross_entropy,
@@ -42,6 +37,7 @@ class Trainer:
         self.setup_tokenizer()
         self.setup_model()
         self.setup_optimizer()
+        self.setup_scheduler()
         self.current_iter = 0
         self.best_val_loss = float("inf")
 
@@ -206,54 +202,22 @@ class Trainer:
         
         for group in self.optimizer.param_groups:
             group["initial_lr"] = group["lr"]
+            
+    def setup_scheduler(self) -> None:
+        if not self.config.scheduler.use_scheduler:
+            self.scheduler = None
+        else:
+            print(f"Setting up {self.config.scheduler.name} scheduler...")
+            self.scheduler = get_scheduler(self.config)
 
     def get_learning_rate(self, iteration: int) -> float:
         """Get learning rate for current iteration."""
-        if not self.config.scheduler.use_scheduler:
+        if not self.scheduler:
             return self.config.optimizer.lr
         
-        if self.config.scheduler.use_multiplier:
-            if self.config.scheduler.name == "cosine":
-                return learning_rate_multiplier_cosine(
-                    t=iteration,
-                    max_t=self.config.training.max_iters,
-                    warmup_frac=self.config.scheduler.warmup_frac,
-                    cosine_cycle_frac=self.config.scheduler.cosine_cycle_frac,
-                )
-            elif self.config.scheduler.name in ("wsd", "warmup_stable_decay"):
-                return learning_rate_multiplier_warmup_stable_decay(
-                    t=iteration,
-                    max_t=self.config.training.max_iters,
-                    warmup_frac=self.config.scheduler.warmup_frac,
-                    decay_frac=self.config.scheduler.decay_frac,
-                )
-            else:
-                raise ValueError(f"Unknown scheduler: {self.config.scheduler.name} with multiplier")
-        else:
-            if self.config.scheduler.name == "cosine":
-                # Automatically extend cosine cycle iters to end of training
-                if self.config.scheduler.cosine_cycle_iters is None:
-                    self.config.scheduler.cosine_cycle_iters = self.config.training.max_iters
-                return learning_rate_cosine(
-                    t=iteration,
-                    max_learning_rate=self.config.scheduler.max_learning_rate,
-                    min_learning_rate=self.config.scheduler.min_learning_rate,
-                    warmup_iters=self.config.scheduler.warmup_iters,
-                    cosine_cycle_iters=self.config.scheduler.cosine_cycle_iters,
-                )
-            elif self.config.scheduler.name in ("wsd", "warmup_stable_decay"):
-                return learning_rate_warmup_stable_decay(
-                    t=iteration,
-                    max_learning_rate=self.config.scheduler.max_learning_rate,
-                    min_learning_rate=self.config.scheduler.min_learning_rate,
-                    warmup_iters=self.config.scheduler.warmup_iters,
-                    stable_iters=self.config.scheduler.stable_iters,
-                    decay_iters=self.config.scheduler.decay_iters
-                )
-            else:
-                raise ValueError(f"Unknown scheduler: {self.config.scheduler.name} without multiplier")
+        return self.scheduler(iteration)
 
-    def update_learning_rate(self, lr: float, use_multiplier = bool) -> None:
+    def update_learning_rate(self, lr: float, use_multiplier: bool) -> None:
         """Update optimizer learning rate."""
         for param_group in self.optimizer.param_groups:
             if use_multiplier:
