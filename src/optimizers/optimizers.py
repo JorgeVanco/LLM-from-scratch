@@ -10,6 +10,7 @@ class SGD(torch.optim.Optimizer):
         defaults = {"lr": lr}
         super().__init__(params, defaults)
     
+    @torch.no_grad()
     def step(self, closure: Optional[Callable] = None) -> None | Any:
         loss = None if closure is None else closure()
         for group in self.param_groups:
@@ -36,6 +37,7 @@ class AdamW(torch.optim.Optimizer):
         }
         super().__init__(params, defaults)
     
+    @torch.no_grad()
     def step(self, closure: Optional[Callable] = None) -> None | Any:
         loss = None if closure is None else closure()
         
