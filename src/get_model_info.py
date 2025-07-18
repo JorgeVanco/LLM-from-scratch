@@ -10,10 +10,11 @@ from src.train import Trainer
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train LLM from scratch")
-    parser.add_argument("--config", type=str, required=True, default="configs/baseline.yaml", help="Path to config file")
+    parser.add_argument("--config", type=str, default="configs/baseline.yaml", help="Path to config file")
     args = parser.parse_args()
     config = ConfigManager.load_config(args.config)
     config.logging.use_wandb = False
+    config.training.compile_model = False
     trainer = Trainer(config)
     config = ConfigManager._config_to_dict(config)
     
@@ -135,6 +136,22 @@ if __name__ == "__main__":
     trainer.model.train()
     train_iter = itertools.cycle(trainer.train_data)
     
+    # warmup
+    x, y = next(train_iter)
+    x, y = x.to(trainer.device), y.to(trainer.device)
+
+    # Forward pass
+    with torch.autocast(device_type=trainer.device.type, dtype=trainer.dtype):
+        logits = trainer.model(x)
+        loss = cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+
+    del x, y, logits  # Free memory
+    
+    # Backward pass
+    trainer.optimizer.zero_grad()
+    loss.backward()
+    trainer.optimizer.step()
+    
     with torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,  # Profile CPU activities
@@ -147,9 +164,9 @@ if __name__ == "__main__":
         # Define a schedule for the profiler
         schedule=torch.profiler.schedule(
             wait=0,      # Wait for 1 iteration before starting to profile
-            warmup=2,    # Warm up for 4 iterations to stabilize performance
-            active=5,    # Profile for 6 active iterations
-            repeat=0,    # Repeat the profiling schedule once
+            warmup=0,    # Warm up for 4 iterations to stabilize performance
+            active=1,    # Profile for 6 active iterations
+            repeat=1,    # Repeat the profiling schedule once
         ),
         on_trace_ready=torch.profiler.tensorboard_trace_handler('./profiler_output'),
         
@@ -171,7 +188,7 @@ if __name__ == "__main__":
         # loss.backward()
         # optimizer.step()
         # p.step()
-        for iteration in range(7):
+        for iteration in range(3):
             
             # Update learning rate
             lr = trainer.get_learning_rate(iteration)
@@ -199,10 +216,10 @@ if __name__ == "__main__":
                 )
 
             trainer.optimizer.step()
-            p.step()
-            
-        print(f"torch.cuda.memory_allocated(0): {torch.cuda.memory_allocated(0)/ (1024**2)} MiB")
-        print(f"torch.cuda.max_memory_allocated(0): {torch.cuda.max_memory_allocated(0)/ (1024**3)} GiB")
+        p.step()
+        
+    print(f"torch.cuda.memory_allocated(0): {torch.cuda.memory_allocated(0)/ (1024**2)} MiB")
+    print(f"torch.cuda.max_memory_allocated(0): {torch.cuda.max_memory_allocated(0)/ (1024**3)} GiB")
             
 
             # print(optimizer.state_dict())
@@ -210,7 +227,7 @@ if __name__ == "__main__":
         # Print a table of the profiling results, sorted by total CUDA time, limited to the top 10 entries
         # print(p.key_averages().table(sort_by="cuda_time_total", row_limit=8))
     print(p.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=20))
-    p.export_memory_timeline("profiler_output/memory_timeline.html", device="cuda")
+    p.export_memory_timeline("profiler_output/memory_timeline.html", device="cuda:0")
     
     snapshot = torch.cuda.memory._snapshot()
     # print(snapshot['segments'])
