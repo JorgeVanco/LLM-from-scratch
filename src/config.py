@@ -3,7 +3,7 @@ Training configuration system for LLM from scratch.
 This module defines the configuration structure and provides utilities for loading configs.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Optional, Dict, Any, Literal
 import yaml
 import json
@@ -44,14 +44,26 @@ class OptimizerConfig:
 class SchedulerConfig:
     """Configuration for learning rate scheduling."""
     use_scheduler: bool = True
+    name: str = "warmup_stable_decay" # cosine, warmup_stable_decay or wsd
     max_learning_rate: float = 3e-4
     min_learning_rate: float = 3e-5
     warmup_iters: int = 2000
     cosine_cycle_iters: int | None = None
+    stable_iters: int | None = None
+    decay_iters: int = 4000
     
-    def __post_init__(self):
+    use_multiplier: bool = False
+    # Multiplier schedulers settings
+    warmup_frac: float = 0.0
+    cosine_cycle_frac: float = 0.8
+    decay_frac: float = 0.2
+    
+    def __post_init__(self) -> None:
         self.max_learning_rate = float(self.max_learning_rate)
         self.min_learning_rate = float(self.min_learning_rate)
+        self.warmup_frac = float(self.warmup_frac)
+        self.cosine_cycle_frac = float(self.cosine_cycle_frac)
+        self.decay_frac = float(self.decay_frac)
 
 
 @dataclass

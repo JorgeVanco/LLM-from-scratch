@@ -13,7 +13,12 @@ from dataclasses import asdict
 from src.model import TransformerLM
 from src.data_loading import load_dataset
 from src.optimizers import SGD, AdamW, Muon, MuonWithAuxAdam
-from src.schedulers import learning_rate_cosine
+from src.schedulers import (
+    learning_rate_cosine,
+    learning_rate_multiplier_cosine,
+    learning_rate_multiplier_warmup_stable_decay,
+    learning_rate_warmup_stable_decay,
+)
 from src.tokenizer import Tokenizer, load_tokenizer
 from src.utils import (
     cross_entropy,
@@ -198,24 +203,63 @@ class Trainer:
             self.optimizer = MuonWithAuxAdam(param_groups)
         else:
             raise ValueError(f"Unknown optimizer: {self.config.optimizer.name}")
+        
+        for group in self.optimizer.param_groups:
+            group["initial_lr"] = group["lr"]
 
     def get_learning_rate(self, iteration: int) -> float:
         """Get learning rate for current iteration."""
         if not self.config.scheduler.use_scheduler:
             return self.config.optimizer.lr
+        
+        if self.config.scheduler.use_multiplier:
+            if self.config.scheduler.name == "cosine":
+                return learning_rate_multiplier_cosine(
+                    t=iteration,
+                    max_t=self.config.training.max_iters,
+                    warmup_frac=self.config.scheduler.warmup_frac,
+                    cosine_cycle_frac=self.config.scheduler.cosine_cycle_frac,
+                )
+            elif self.config.scheduler.name in ("wsd", "warmup_stable_decay"):
+                return learning_rate_multiplier_warmup_stable_decay(
+                    t=iteration,
+                    max_t=self.config.training.max_iters,
+                    warmup_frac=self.config.scheduler.warmup_frac,
+                    decay_frac=self.config.scheduler.decay_frac,
+                )
+            else:
+                raise ValueError(f"Unknown scheduler: {self.config.scheduler.name} with multiplier")
+        else:
+            if self.config.scheduler.name == "cosine":
+                # Automatically extend cosine cycle iters to end of training
+                if self.config.scheduler.cosine_cycle_iters is None:
+                    self.config.scheduler.cosine_cycle_iters = self.config.training.max_iters
+                return learning_rate_cosine(
+                    t=iteration,
+                    max_learning_rate=self.config.scheduler.max_learning_rate,
+                    min_learning_rate=self.config.scheduler.min_learning_rate,
+                    warmup_iters=self.config.scheduler.warmup_iters,
+                    cosine_cycle_iters=self.config.scheduler.cosine_cycle_iters,
+                )
+            elif self.config.scheduler.name in ("wsd", "warmup_stable_decay"):
+                return learning_rate_warmup_stable_decay(
+                    t=iteration,
+                    max_learning_rate=self.config.scheduler.max_learning_rate,
+                    min_learning_rate=self.config.scheduler.min_learning_rate,
+                    warmup_iters=self.config.scheduler.warmup_iters,
+                    stable_iters=self.config.scheduler.stable_iters,
+                    decay_iters=self.config.scheduler.decay_iters
+                )
+            else:
+                raise ValueError(f"Unknown scheduler: {self.config.scheduler.name} without multiplier")
 
-        return learning_rate_cosine(
-            t=iteration,
-            max_learning_rate=self.config.scheduler.max_learning_rate,
-            min_learning_rate=self.config.scheduler.min_learning_rate,
-            warmup_iters=self.config.scheduler.warmup_iters,
-            cosine_cycle_iters=self.config.scheduler.cosine_cycle_iters,
-        )
-
-    def update_learning_rate(self, lr: float) -> None:
+    def update_learning_rate(self, lr: float, use_multiplier = bool) -> None:
         """Update optimizer learning rate."""
         for param_group in self.optimizer.param_groups:
-            param_group["lr"] = lr
+            if use_multiplier:
+                param_group["lr"] = param_group["initial_lr"] * lr
+            else:
+                param_group["lr"] = lr
 
     @torch.no_grad()
     def estimate_loss(self, use_whole_dataset: bool = False) -> dict[str, float]:
@@ -317,15 +361,12 @@ class Trainer:
         print("Starting training...")
 
         max_iters: int = self.get_iters()
+        self.config.training.max_iters = max_iters
 
         print(f"Training for {max_iters:,} iterations")
         print(
             f"Total tokens: {max_iters * self.config.training.batch_size * self.config.model.context_length:,}"
         )
-
-        # Automatically extend cosine cycle iters to end of training
-        if self.config.scheduler.cosine_cycle_iters is None:
-            self.config.scheduler.cosine_cycle_iters = max_iters
 
         self.model.train()
         start_time = time.time()
@@ -339,7 +380,7 @@ class Trainer:
 
             # Update learning rate
             lr = self.get_learning_rate(iteration)
-            self.update_learning_rate(lr)
+            self.update_learning_rate(lr, self.config.scheduler.use_multiplier)
 
             # Get batch
             x, y = next(train_iter)
