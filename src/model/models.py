@@ -98,7 +98,7 @@ class SwiGLU(nn.Module):
         silu_x = silu(self.w1(x))
         element_product = silu_x * self.w3(x)
         return self.w2(element_product)
-    
+
 
 class SiLUFFN(nn.Module):
     def __init__(self, d_model: int, d_ff: int) -> None:
@@ -194,8 +194,16 @@ class MultiHeadSelfAttention(nn.Module):
         self.output_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
-        self.q_norm = RMSNorm(d_head, elementwise_affine=False, device=device, dtype=dtype) if qk_norm else nn.Identity()
-        self.k_norm = RMSNorm(d_head, elementwise_affine=False, device=device, dtype=dtype) if qk_norm else nn.Identity()
+        self.q_norm = (
+            RMSNorm(d_head, elementwise_affine=False, device=device, dtype=dtype)
+            if qk_norm
+            else nn.Identity()
+        )
+        self.k_norm = (
+            RMSNorm(d_head, elementwise_affine=False, device=device, dtype=dtype)
+            if qk_norm
+            else nn.Identity()
+        )
         self.rope = rope
 
     def forward(
@@ -222,7 +230,7 @@ class MultiHeadSelfAttention(nn.Module):
             "... seq_len (num_heads d_heads) -> ... num_heads seq_len d_heads",
             num_heads=self.num_heads,
         )
-        
+
         queries = self.q_norm(queries)
         keys = self.k_norm(keys)
 
@@ -234,7 +242,9 @@ class MultiHeadSelfAttention(nn.Module):
             queries,
             keys,
             values,
-            ~torch.triu(torch.ones(seq_len, seq_len, device=x.device), diagonal=1).bool(),
+            ~torch.triu(
+                torch.ones(seq_len, seq_len, device=x.device), diagonal=1
+            ).bool(),
         )
 
         values = rearrange(
@@ -254,13 +264,15 @@ class TransformerBlock(nn.Module):
         qk_norm: bool = True,
         rope: RotaryPositionalEmbedding | None = None,
         post_norm: bool | None = False,
-        ffn_type: Literal["swiglu", "silu"] = "swiglu"
+        ffn_type: Literal["swiglu", "silu"] = "swiglu",
     ) -> None:
         super().__init__()
         self.ln1 = RMSNorm(d_model)
         self.attn = MultiHeadSelfAttention(d_model, num_heads, qk_norm, rope)
         self.ln2 = RMSNorm(d_model)
-        self.ffn = SwiGLU(d_model, d_ff) if ffn_type == "swiglu" else SiLUFFN(d_model, d_ff)
+        self.ffn = (
+            SwiGLU(d_model, d_ff) if ffn_type == "swiglu" else SiLUFFN(d_model, d_ff)
+        )
         self.rope = rope is not None
         self.post_norm = post_norm
 
@@ -271,7 +283,7 @@ class TransformerBlock(nn.Module):
             x = x + self.ffn(x)
             return x
 
-        elif self.post_norm:    # Post-norm
+        elif self.post_norm:  # Post-norm
             res = x
             x = self.attn(x, position_encodings)
             x = self.ln1(res + x)
@@ -281,7 +293,7 @@ class TransformerBlock(nn.Module):
             x = self.ln2(res + x)
             return x
 
-        else:   # Pre-norm
+        else:  # Pre-norm
             res = x
 
             x = self.ln1(x)
@@ -308,7 +320,7 @@ class TransformerLM(nn.Module):
         qk_norm: bool = True,
         rope_theta: float | None = None,
         post_norm: bool | None = False,
-        ffn_type: Literal["swiglu", "silu"] = "swiglu"
+        ffn_type: Literal["swiglu", "silu"] = "swiglu",
     ) -> None:
         super().__init__()
 
@@ -317,21 +329,40 @@ class TransformerLM(nn.Module):
         self.token_embeddings = Embedding(vocab_size, d_model)
 
         d_k = d_model // num_heads
-        rope = RotaryPositionalEmbedding(rope_theta, d_k, context_length) if rope_theta is not None else None
+        rope = (
+            RotaryPositionalEmbedding(rope_theta, d_k, context_length)
+            if rope_theta is not None
+            else None
+        )
 
         self.layers = nn.ModuleList(
-            TransformerBlock(d_model, num_heads, d_ff, qk_norm, rope, post_norm, ffn_type) for _ in range(num_layers)
+            TransformerBlock(
+                d_model, num_heads, d_ff, qk_norm, rope, post_norm, ffn_type
+            )
+            for _ in range(num_layers)
         )
         self.ln_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
 
+        self.scalars = nn.Parameter(torch.ones(num_layers // 2))
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.token_embeddings(x)
-        for layer in self.layers:
+
+        # U-net structure as in modded nano-gpt
+        n = len(self.layers) // 2
+        skip_connections = []
+        skip_weights = self.scalars[:n]
+        for i, layer in enumerate(self.layers):
+            if i >= n:
+                x = x + skip_weights * skip_connections.pop()
             x = layer(x)
+            if i < n:
+                skip_connections.append(x)
         x = self.ln_final(x)
         x = self.lm_head(x)
         return x
+
 
 if __name__ == "__main__":
     model = TransformerLM(50257, 1024, 48, 1600, 25, 6400, False, 1000)
