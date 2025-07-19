@@ -360,8 +360,9 @@ class TransformerLM(nn.Module):
             if i < n:
                 skip_connections.append(x)
         x = self.ln_final(x)
-        x = self.lm_head(x)
-        return x
+        logits = self.lm_head(x)
+        logits = 30 * torch.sigmoid(logits / (7.5 * x.size(-1) ** 0.5))
+        return logits
 
 
 if __name__ == "__main__":
