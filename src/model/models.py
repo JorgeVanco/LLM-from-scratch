@@ -355,7 +355,7 @@ class TransformerLM(nn.Module):
         skip_weights = self.scalars[:n]
         for i, layer in enumerate(self.layers):
             if i >= n:
-                x = x + skip_weights * skip_connections.pop()
+                x = x + skip_weights[i - n] * skip_connections.pop()
             x = layer(x)
             if i < n:
                 skip_connections.append(x)
