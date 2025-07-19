@@ -19,6 +19,7 @@ class ModelConfig:
     d_model: int = 768
     num_heads: int = 12
     d_ff: int = 3072
+    qk_norm: bool = True
     rope_theta: float | None = 10000.0
     post_norm: bool | None = False
     ffn_type: Literal["swiglu", "silu"] = "swiglu"

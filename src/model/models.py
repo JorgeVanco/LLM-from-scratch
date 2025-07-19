@@ -55,6 +55,7 @@ class RMSNorm(nn.Module):
     def __init__(
         self,
         d_model: int,
+        elementwise_affine: bool = True,
         eps: float = 1e-5,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
@@ -62,7 +63,10 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
+        if elementwise_affine:
+            self.weight = nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
+        else:
+            self.register_buffer("weight", torch.tensor(1.0), persistent=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         in_dtype = x.dtype
@@ -165,6 +169,7 @@ class MultiHeadSelfAttention(nn.Module):
         self,
         d_model: int,
         num_heads: int,
+        qk_norm: bool = True,
         rope: RotaryPositionalEmbedding | None = None,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
@@ -189,6 +194,8 @@ class MultiHeadSelfAttention(nn.Module):
         self.output_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
+        self.q_norm = RMSNorm(d_head, elementwise_affine=False, device=device, dtype=dtype) if qk_norm else nn.Identity()
+        self.k_norm = RMSNorm(d_head, elementwise_affine=False, device=device, dtype=dtype) if qk_norm else nn.Identity()
         self.rope = rope
 
     def forward(
@@ -215,6 +222,9 @@ class MultiHeadSelfAttention(nn.Module):
             "... seq_len (num_heads d_heads) -> ... num_heads seq_len d_heads",
             num_heads=self.num_heads,
         )
+        
+        queries = self.q_norm(queries)
+        keys = self.k_norm(keys)
 
         if self.rope is not None:
             queries = self.rope(queries, token_positions)
@@ -241,13 +251,14 @@ class TransformerBlock(nn.Module):
         d_model: int,
         num_heads: int,
         d_ff: int,
+        qk_norm: bool = True,
         rope: RotaryPositionalEmbedding | None = None,
         post_norm: bool | None = False,
         ffn_type: Literal["swiglu", "silu"] = "swiglu"
     ) -> None:
         super().__init__()
         self.ln1 = RMSNorm(d_model)
-        self.attn = MultiHeadSelfAttention(d_model, num_heads, rope)
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, qk_norm, rope)
         self.ln2 = RMSNorm(d_model)
         self.ffn = SwiGLU(d_model, d_ff) if ffn_type == "swiglu" else SiLUFFN(d_model, d_ff)
         self.rope = rope is not None
@@ -294,7 +305,8 @@ class TransformerLM(nn.Module):
         d_model: int,
         num_heads: int,
         d_ff: int,
-        rope_theta: float | None,
+        qk_norm: bool = True,
+        rope_theta: float | None = None,
         post_norm: bool | None = False,
         ffn_type: Literal["swiglu", "silu"] = "swiglu"
     ) -> None:
@@ -308,7 +320,7 @@ class TransformerLM(nn.Module):
         rope = RotaryPositionalEmbedding(rope_theta, d_k, context_length) if rope_theta is not None else None
 
         self.layers = nn.ModuleList(
-            TransformerBlock(d_model, num_heads, d_ff, rope, post_norm, ffn_type) for _ in range(num_layers)
+            TransformerBlock(d_model, num_heads, d_ff, qk_norm, rope, post_norm, ffn_type) for _ in range(num_layers)
         )
         self.ln_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
@@ -322,6 +334,6 @@ class TransformerLM(nn.Module):
         return x
 
 if __name__ == "__main__":
-    model = TransformerLM(50257, 1024, 48, 1600, 25, 6400, 1000)
-    # model = TransformerLM(100, 10, 3, 32, 2, 64, 1000)
+    model = TransformerLM(50257, 1024, 48, 1600, 25, 6400, False, 1000)
+    # model = TransformerLM(100, 10, 3, 32, 2, 64, False, 1000)
     print(sum(p.numel() for p in model.parameters()))
