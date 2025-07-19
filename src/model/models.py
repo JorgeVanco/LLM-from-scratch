@@ -112,6 +112,18 @@ class SiLUFFN(nn.Module):
         return self.w2(silu_x)
 
 
+class ReGLU2(nn.Module):
+    def __init__(self, d_model: int, d_ff: int) -> None:
+        # d_ff should be 4 d_model
+        super().__init__()
+        self.w1 = Linear(d_model, d_ff)
+        self.w2 = Linear(d_ff, d_model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        relu2_x = torch.nn.functional.relu(self.w1(x)).square()
+        return self.w2(relu2_x)
+
+
 class RotaryPositionalEmbedding(nn.Module):
     def __init__(
         self,
@@ -264,14 +276,16 @@ class TransformerBlock(nn.Module):
         qk_norm: bool = True,
         rope: RotaryPositionalEmbedding | None = None,
         post_norm: bool | None = False,
-        ffn_type: Literal["swiglu", "silu"] = "swiglu",
+        ffn_type: Literal["swiglu", "silu", "reglu2"] = "swiglu",
     ) -> None:
         super().__init__()
         self.ln1 = RMSNorm(d_model)
         self.attn = MultiHeadSelfAttention(d_model, num_heads, qk_norm, rope)
         self.ln2 = RMSNorm(d_model)
         self.ffn = (
-            SwiGLU(d_model, d_ff) if ffn_type == "swiglu" else SiLUFFN(d_model, d_ff)
+            SwiGLU(d_model, d_ff)
+            if ffn_type == "swiglu"
+            else SiLUFFN(d_model, d_ff) if ffn_type == "silu" else ReGLU2(d_model, d_ff)
         )
         self.rope = rope is not None
         self.post_norm = post_norm
@@ -320,7 +334,7 @@ class TransformerLM(nn.Module):
         qk_norm: bool = True,
         rope_theta: float | None = None,
         post_norm: bool | None = False,
-        ffn_type: Literal["swiglu", "silu"] = "swiglu",
+        ffn_type: Literal["swiglu", "silu", "reglu2"] = "swiglu",
     ) -> None:
         super().__init__()
 
