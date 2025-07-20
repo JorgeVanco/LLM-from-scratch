@@ -23,7 +23,7 @@ class ModelConfig:
     qk_norm: bool = True
     rope_theta: float | None = 10000.0
     post_norm: bool | None = False
-    ffn_type: Literal["swiglu", "silu", "reglu2"] = "swiglu"
+    ffn_type: Literal["swiglu", "silu", "relu2"] = "swiglu"
 
 
 @dataclass
