@@ -13,10 +13,10 @@ def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, it
     )
 
 
-def load_checkpoint(src: str | os.PathLike | BinaryIO | IO[bytes], model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> int:
+def load_checkpoint(src: str | os.PathLike | BinaryIO | IO[bytes], model: torch.nn.Module, optimizer: torch.optim.Optimizer | None = None) -> int:
     obj = torch.load(src)
-    
-    model.load_state_dict(obj["model"])
-    optimizer.load_state_dict(obj["optimizer"])
-    
+    model.load_state_dict({k.replace("_orig_mod.", ""): v for k, v in obj["model"].items()})
+    if optimizer is not None:
+        optimizer.load_state_dict(obj["optimizer"])
+
     return obj["iteration"]
