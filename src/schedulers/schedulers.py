@@ -37,7 +37,7 @@ def learning_rate_warmup_stable_decay(t: int, max_learning_rate: float, min_lear
     return learning_rate
 
 
-def learning_rate_multiplier_warmup_stable_decay(t: int, max_t: int, warmup_frac: float, decay_frac: float) -> float:
+def learning_rate_multiplier_warmup_stable_decay(t: int, max_t: int, warmup_frac: float, decay_frac: float, linear: bool = False) -> float:
     x = t / max_t
     assert 0 <= x < 1
     if x < warmup_frac:
@@ -45,5 +45,8 @@ def learning_rate_multiplier_warmup_stable_decay(t: int, max_t: int, warmup_frac
     elif x < 1 - decay_frac:
         return 1.0
     else:
-        w = (1 - x) / decay_frac
-        return w * 1.0 + (1 - w) * 0.1
+        if linear:
+            w = (1 - x) / decay_frac
+            return w * 1.0 + (1 - w) * 0.01
+        else: 
+            return 1 - math.sqrt((x - (1 - decay_frac)) / decay_frac)
