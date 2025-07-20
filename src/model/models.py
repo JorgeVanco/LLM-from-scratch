@@ -20,9 +20,9 @@ class Linear(nn.Module):
         self.weight = nn.Parameter(
             torch.empty(out_features, in_features, device=device, dtype=dtype)
         )
-
-        std: float = (2 / (in_features + out_features)) ** 0.5
-        torch.nn.init.trunc_normal_(self.weight, 0.0, std, a=-3 * std, b=3 * std)
+        std: float = 0.5 * (self.weight.size(-1) ** -0.5)
+        bound: float = (3 ** 0.5) * std
+        torch.nn.init.uniform_(self.weight, -bound, bound)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return einsum(
@@ -44,8 +44,7 @@ class Embedding(nn.Module):
         self.weight = nn.Parameter(
             torch.empty(num_embeddings, embedding_dim, device=device, dtype=dtype)
         )
-
-        torch.nn.init.trunc_normal_(self.weight, 0.0, 1.0, a=-3, b=3)
+        torch.nn.init.normal_(self.weight, 0.0, 1.0)
 
     def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
         return self.weight[token_ids]
@@ -93,6 +92,7 @@ class SwiGLU(nn.Module):
         self.w1 = Linear(d_model, d_ff)
         self.w2 = Linear(d_ff, d_model)
         self.w3 = Linear(d_model, d_ff)
+        torch.nn.init.zeros_(self.w2.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         silu_x = silu(self.w1(x))
@@ -106,6 +106,7 @@ class SiLUFFN(nn.Module):
         super().__init__()
         self.w1 = Linear(d_model, d_ff)
         self.w2 = Linear(d_ff, d_model)
+        torch.nn.init.zeros_(self.w2.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         silu_x = silu(self.w1(x))
@@ -118,6 +119,7 @@ class ReLU2FFN(nn.Module):
         super().__init__()
         self.w1 = Linear(d_model, d_ff)
         self.w2 = Linear(d_ff, d_model)
+        torch.nn.init.zeros_(self.w2.weight)  # Initialize weights to zero for the second layer
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         relu2_x = torch.nn.functional.relu(self.w1(x)).square()
