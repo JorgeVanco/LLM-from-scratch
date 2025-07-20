@@ -253,7 +253,11 @@ class MultiHeadSelfAttention(nn.Module):
             keys = self.rope(keys, token_positions)
             
         if ve is not None:
-            values = lambdas[0] * values + lambdas[1] * ve.view_as(values)
+            values = lambdas[0] * values + lambdas[1] * rearrange(
+                                                            ve,
+                                                            "... seq_len (num_heads d_heads) -> ... num_heads seq_len d_heads",
+                                                            num_heads=self.num_heads,
+                                                        )
         elif lambdas is not None:
             values = lambdas[0] * values
 
