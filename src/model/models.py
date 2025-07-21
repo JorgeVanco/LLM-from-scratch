@@ -221,7 +221,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.rope = rope
 
     def forward(
-        self, x: torch.Tensor, token_positions: torch.Tensor | None = None, ve: torch.Tensor | None = None, lambdas: torch.Tensor | None = None
+        self, x: torch.Tensor, token_positions: torch.Tensor | None = None
     ) -> torch.Tensor:
         seq_len = x.shape[-2]
 
@@ -251,15 +251,6 @@ class MultiHeadSelfAttention(nn.Module):
         if self.rope is not None:
             queries = self.rope(queries, token_positions)
             keys = self.rope(keys, token_positions)
-            
-        if ve is not None:
-            values = lambdas[0] * values + lambdas[1] * rearrange(
-                                                            ve,
-                                                            "... seq_len (num_heads d_heads) -> ... num_heads seq_len d_heads",
-                                                            num_heads=self.num_heads,
-                                                        )
-        elif lambdas is not None:
-            values = lambdas[0] * values
 
         values = scaled_dot_product_attention(
             queries,
@@ -301,19 +292,16 @@ class TransformerBlock(nn.Module):
         self.rope = rope is not None
         self.post_norm = post_norm
 
-    def forward(self, x: torch.Tensor, ve: torch.Tensor | None = None, x0: torch.Tensor | None = None, lambdas: torch.Tensor | None = None, sa_lambdas: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         position_encodings = torch.arange(x.shape[-2]) if self.rope else None
-        if lambdas is not None and x0 is not None:
-            x = lambdas[0] * x + lambdas[1] * x0
-
         if self.post_norm is None:  # No norm
-            x = x + self.attn(x, position_encodings, ve, sa_lambdas)
+            x = x + self.attn(x, position_encodings)
             x = x + self.ffn(x)
             return x
 
         elif self.post_norm:  # Post-norm
             res = x
-            x = self.attn(x, position_encodings, ve, sa_lambdas)
+            x = self.attn(x, position_encodings)
             x = self.ln1(res + x)
 
             res = x
@@ -325,7 +313,7 @@ class TransformerBlock(nn.Module):
             res = x
 
             x = self.ln1(x)
-            x = self.attn(x, position_encodings, ve, sa_lambdas)
+            x = self.attn(x, position_encodings)
             x = res + x
 
             res = x
@@ -371,35 +359,20 @@ class TransformerLM(nn.Module):
         )
         self.ln_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
-        torch.nn.init.zeros_(self.lm_head.weight)  # Initialize weights to zero for the output layer
 
-        self.value_embeds = nn.ModuleList([Embedding(vocab_size, d_model) for _ in range(3)])
-        self.scalars = nn.Parameter(torch.cat([
-            torch.ones(num_layers), # skip_weights
-            *[torch.tensor([1.0, 0.0]) for _ in range(num_layers)], # block lambdas
-            *[torch.tensor([0.5, 0.5]) for _ in range(num_layers)], # SA lambdas
-        ]))
+        self.scalars = nn.Parameter(torch.ones(num_layers // 2))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        
-        ve = [value_embed(x) for value_embed in self.value_embeds]
-        # 012 ... 012 structure on token value embeddings by @YouJiacheng, improved on @leloykun's U-net structure
-        ve = [ve[0], ve[1], ve[2]] + [None] * (len(self.layers) - 6) + [ve[0], ve[1], ve[2]]
-        
-        x = x0 = norm(self.token_embeddings(x))
+        x = self.token_embeddings(x)
 
         # U-net structure as in modded nano-gpt
-        x0 = x
         n = len(self.layers) // 2
         skip_connections = []
         skip_weights = self.scalars[:n]
-        lambdas = self.scalars[1 * len(self.layers): 3 * len(self.layers)].view(-1, 2)
-        sa_lambdas = self.scalars[3 * len(self.layers): 5 * len(self.layers)].view(-1, 2)
-        
         for i, layer in enumerate(self.layers):
             if i >= n:
                 x = x + skip_weights[i - n] * skip_connections.pop()
-            x = layer(x, ve[i], x0, lambdas[i], sa_lambdas[i])
+            x = layer(x)
             if i < n:
                 skip_connections.append(x)
         x = self.ln_final(x)
@@ -407,8 +380,7 @@ class TransformerLM(nn.Module):
         logits = 30 * torch.sigmoid(logits / (7.5 * x.size(-1) ** 0.5))
         return logits
 
-def norm(x: torch.Tensor) -> torch.Tensor:
-    return torch.nn.functional.rms_norm(x, (x.size(-1),))
+
 if __name__ == "__main__":
     model = TransformerLM(50257, 1024, 48, 1600, 25, 6400, False, 1000)
     # model = TransformerLM(100, 10, 3, 32, 2, 64, False, 1000)
