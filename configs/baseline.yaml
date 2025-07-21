@@ -40,6 +40,7 @@ scheduler:
 training:
     batch_size: 256
     max_iters: 5000
+    gradient_accumulation_steps: 1
     max_tokens: null
     eval_interval: 100
     eval_iters: 100

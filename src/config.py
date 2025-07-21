@@ -85,6 +85,7 @@ class TrainingConfig:
     batch_size: int = 16
     max_iters: int | None = None
     max_tokens: int | None = None
+    gradient_accumulation_steps: int = 1
     eval_interval: int = 1000
     eval_iters: int = 200
     log_interval: int = 100

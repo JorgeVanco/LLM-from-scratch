@@ -312,13 +312,12 @@ class Trainer:
         assert self.config.training.max_iters is not None or self.config.training.max_tokens is not None, "Must declare max_iters or max_tokens for training"
 
         if self.config.training.max_iters is None:
-            return self.config.training.max_tokens // (self.config.training.batch_size * self.config.model.context_length)
-        
+            return self.config.training.max_tokens // (self.config.training.batch_size * self.config.model.context_length * self.config.training.gradient_accumulation_steps)
         elif self.config.training.max_tokens is None:
             return self.config.training.max_iters
         
         else:
-            return min(self.config.training.max_iters, self.config.training.max_tokens // (self.config.training.batch_size * self.config.model.context_length))
+            return min(self.config.training.max_iters, self.config.training.max_tokens // (self.config.training.batch_size * self.config.model.context_length * self.config.training.gradient_accumulation_steps))
 
 
     def train(self) -> None:
@@ -330,7 +329,7 @@ class Trainer:
 
         print(f"Training for {max_iters:,} iterations")
         print(
-            f"Total tokens: {max_iters * self.config.training.batch_size * self.config.model.context_length:,}"
+            f"Total tokens: {max_iters * self.config.training.batch_size * self.config.model.context_length * self.config.training.gradient_accumulation_steps:,}"
         )
 
         self.model.train()
@@ -342,25 +341,28 @@ class Trainer:
             range(self.current_iter, max_iters), position=0, leave=True
         ):
             self.current_iter = iteration
+            
+            # Reset gradients
+            self.optimizer.zero_grad()
 
             # Update learning rate
             lr = self.get_learning_rate(iteration)
             self.update_learning_rate(lr, self.config.scheduler.use_multiplier)
 
-            # Get batch
-            x, y = next(train_iter)
-            x, y = x.to(self.device), y.to(self.device)
+            for _ in range(self.config.training.gradient_accumulation_steps):
+                # Get batch
+                x, y = next(train_iter)
+                x, y = x.to(self.device), y.to(self.device)
 
-            # Forward pass
-            with torch.autocast(device_type=self.device.type, dtype=self.dtype):
-                logits = self.model(x)
-                loss = cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+                # Forward pass
+                with torch.autocast(device_type=self.device.type, dtype=self.dtype):
+                    logits = self.model(x)
+                    loss = cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
 
-            del x, y, logits  # Free memory
-            
-            # Backward pass
-            self.optimizer.zero_grad()
-            loss.backward()
+                del x, y, logits  # Free memory
+                
+                # Backward pass
+                loss.backward()
 
             # Gradient clipping
             if self.config.training.gradient_clip_val > 0:
@@ -377,6 +379,7 @@ class Trainer:
                     (iteration + 1)
                     * self.config.training.batch_size
                     * self.config.model.context_length
+                    * self.config.training.gradient_accumulation_steps
                 )
                 tokens_per_sec = tokens_processed / elapsed
                 
