@@ -102,6 +102,10 @@ class FlashAttentionPytorch(torch.autograd.Function):
 class FlashAttentionTriton(torch.autograd.Function):
     @staticmethod
     def forward(ctx, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, is_causal: bool=False) -> torch.Tensor:
+        
+        assert Q.is_cuda and K.is_cuda and V.is_cuda, "Expected CUDA tensors"
+        assert Q.is_contiguous() and K.is_contiguous() and V.is_contiguous(), "Our pointer arithmetic will assume contiguous tensors"
+        
         O = torch.empty(Q.shape[:-1] + (V.size(2),), device=Q.device)
         L = torch.empty(Q.shape[:-1], device=Q.device)
         b = Q.size(0)
