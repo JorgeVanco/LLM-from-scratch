@@ -25,7 +25,9 @@ from src.utils import (
 )
 from src.config import ExperimentConfig, ConfigManager
 
-torch.set_float32_matmul_precision('high')
+torch.set_float32_matmul_precision("high")
+
+
 class Trainer:
     """Main trainer class for the LLM."""
 
@@ -153,9 +155,7 @@ class Trainer:
             )
             self.config.model.vocab_size = actual_vocab_size
 
-        self.model = TransformerLM(
-            **asdict(self.config.model)
-        )
+        self.model = TransformerLM(**asdict(self.config.model))
 
         self.model = self.model.to(self.device)
 
@@ -188,22 +188,44 @@ class Trainer:
         elif optimizer_config.name.lower() == "sgd":
             self.optimizer = SGD(self.model.parameters(), lr=optimizer_config.lr)
         elif optimizer_config.name.lower() == "muon":
-            hidden_matrix_params = [p for n, p in self.model.layers.named_parameters() if p.ndim >= 2 and "embed" not in n]
+            hidden_matrix_params = [
+                p
+                for n, p in self.model.layers.named_parameters()
+                if p.ndim >= 2 and "embed" not in n
+            ]
             embed_params = [p for n, p in self.model.named_parameters() if "embed" in n]
             scalar_params = [p for p in self.model.parameters() if p.ndim < 2]
             head_params = [self.model.lm_head.weight]
 
-            adam_groups = [dict(params=head_params), dict(params=embed_params), dict(params=scalar_params)]
-            adam_groups = [dict(**g, betas=optimizer_config.betas, eps=1e-10, use_muon=False, lr=optimizer_config.lr) for g in adam_groups]
-            muon_group = dict(params=hidden_matrix_params, lr=optimizer_config.muon_lr, momentum=optimizer_config.muon_momentum, use_muon=True)
+            adam_groups = [
+                dict(params=head_params),
+                dict(params=embed_params),
+                dict(params=scalar_params),
+            ]
+            adam_groups = [
+                dict(
+                    **g,
+                    betas=optimizer_config.betas,
+                    eps=1e-10,
+                    use_muon=False,
+                    lr=optimizer_config.lr,
+                )
+                for g in adam_groups
+            ]
+            muon_group = dict(
+                params=hidden_matrix_params,
+                lr=optimizer_config.muon_lr,
+                momentum=optimizer_config.muon_momentum,
+                use_muon=True,
+            )
             param_groups = [*adam_groups, muon_group]
             self.optimizer = MuonWithAuxAdam(param_groups)
         else:
             raise ValueError(f"Unknown optimizer: {optimizer_config.name}")
-        
+
         for group in self.optimizer.param_groups:
             group["initial_lr"] = group["lr"]
-            
+
     def setup_scheduler(self) -> None:
         if not self.config.scheduler.use_scheduler:
             self.scheduler = None
@@ -215,7 +237,7 @@ class Trainer:
         """Get learning rate for current iteration."""
         if not self.scheduler:
             return self.config.optimizer.lr
-        
+
         return self.scheduler(iteration)
 
     def update_learning_rate(self, lr: float, use_multiplier: bool) -> None:
@@ -233,7 +255,11 @@ class Trainer:
         losses: dict = {}
         total_loss: float = 0.0
 
-        iters = len(self.val_data) if use_whole_dataset else min(len(self.val_data), self.config.training.eval_iters)
+        iters = (
+            len(self.val_data)
+            if use_whole_dataset
+            else min(len(self.val_data), self.config.training.eval_iters)
+        )
         iter_dataloader = iter(self.val_data)
         for _ in tqdm(range(iters), desc="Estimating loss", position=1, leave=False):
             x, y = next(iter_dataloader)
@@ -309,16 +335,30 @@ class Trainer:
 
     def get_iters(self) -> int:
 
-        assert self.config.training.max_iters is not None or self.config.training.max_tokens is not None, "Must declare max_iters or max_tokens for training"
+        assert (
+            self.config.training.max_iters is not None
+            or self.config.training.max_tokens is not None
+        ), "Must declare max_iters or max_tokens for training"
 
         if self.config.training.max_iters is None:
-            return self.config.training.max_tokens // (self.config.training.batch_size * self.config.model.context_length * self.config.training.gradient_accumulation_steps)
+            return self.config.training.max_tokens // (
+                self.config.training.batch_size
+                * self.config.model.context_length
+                * self.config.training.gradient_accumulation_steps
+            )
         elif self.config.training.max_tokens is None:
             return self.config.training.max_iters
-        
-        else:
-            return min(self.config.training.max_iters, self.config.training.max_tokens // (self.config.training.batch_size * self.config.model.context_length * self.config.training.gradient_accumulation_steps))
 
+        else:
+            return min(
+                self.config.training.max_iters,
+                self.config.training.max_tokens
+                // (
+                    self.config.training.batch_size
+                    * self.config.model.context_length
+                    * self.config.training.gradient_accumulation_steps
+                ),
+            )
 
     def train(self) -> None:
         """Main training loop."""
@@ -336,12 +376,12 @@ class Trainer:
         start_time = time.time()
 
         train_iter = itertools.cycle(self.train_data)
-
+        tokens_processed: int = 0
         for iteration in tqdm(
             range(self.current_iter, max_iters), position=0, leave=True
         ):
             self.current_iter = iteration
-            
+
             # Reset gradients
             self.optimizer.zero_grad()
 
@@ -360,7 +400,7 @@ class Trainer:
                     loss = cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
 
                 del x, y, logits  # Free memory
-                
+
                 # Backward pass
                 loss.backward()
 
@@ -375,17 +415,16 @@ class Trainer:
             # Logging
             if iteration % self.config.training.log_interval == 0:
                 elapsed = time.time() - start_time
-                tokens_processed = (
-                    (iteration + 1)
-                    * self.config.training.batch_size
+                tokens_processed += (
+                    self.config.training.batch_size
                     * self.config.model.context_length
                     * self.config.training.gradient_accumulation_steps
                 )
                 tokens_per_sec = tokens_processed / elapsed
-                
+
                 if self.config.scheduler.use_multiplier:
                     lr = lr * self.config.optimizer.lr
-                
+
                 metrics = {
                     "train/loss": loss.item(),
                     "train/lr": lr,
@@ -406,7 +445,7 @@ class Trainer:
                 and iteration > 0
                 or iteration == max_iters - 1
             ) and self.val_data is not None:
-                losses = self.estimate_loss(use_whole_dataset= False)
+                losses = self.estimate_loss(use_whole_dataset=False)
 
                 # Check if this is the best model
                 is_best = losses["val"] < self.best_val_loss
@@ -444,14 +483,16 @@ class Trainer:
         results = {
             "final_loss": float(losses["val"]),
             "best_val_loss": float(self.best_val_loss),
-            "status": "completed"
+            "status": "completed",
         }
 
         if self.use_wandb:
             import wandb
+
             wandb.finish()
 
         print(f"RESULTS_JSON:{json.dumps(results)}", flush=True)
+
 
 def parse_cli_overrides(argv) -> dict:
     overrides = {}
@@ -483,7 +524,7 @@ def main() -> None:
     parser.add_argument("--resume", type=str, help="Path to checkpoint to resume from")
 
     args, overrides = parser.parse_known_args()
-    
+
     # Load configuration
     config = ConfigManager.load_config(args.config)
     for key_path, value in parse_cli_overrides(overrides).items():
