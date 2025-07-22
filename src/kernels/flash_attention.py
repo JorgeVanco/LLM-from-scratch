@@ -115,9 +115,10 @@ class FlashAttentionTriton(torch.autograd.Function):
         stride_vb, stride_vk, stride_vd = V.stride()
         stride_ob, stride_oq, stride_od = O.stride()
         stride_lb, stride_lq = L.stride()
+
+        ctx.Q_TILE_SIZE = 64
+        ctx.K_TILE_SIZE = 64
         
-        ctx.Q_TILE_SIZE = 16
-        ctx.K_TILE_SIZE = 16
         ctx.D = Q.size(-1)
         ctx.is_causal = is_causal
 
@@ -278,12 +279,10 @@ def flash_fwd_kernel(
         block_shape=(Q_TILE_SIZE,),
         order=(0,),
     )
-
-    m_before = tl.full([Q_TILE_SIZE], float("-inf"), dtype=tl.float32)
-    m = tl.zeros((Q_TILE_SIZE,), dtype=tl.float32)
-    o = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
-    l = tl.zeros((Q_TILE_SIZE,), dtype=tl.float32)
     
+    m_i = tl.full([Q_TILE_SIZE], float("-inf"), dtype=tl.float32)
+    lse_i = tl.full([Q_TILE_SIZE], float("-inf"), dtype=tl.float32)
+    acc_o = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
     
     Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option='zero')
     for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
@@ -296,27 +295,30 @@ def flash_fwd_kernel(
             k_start = j * K_TILE_SIZE
             k_indices = k_start + tl.arange(0, K_TILE_SIZE)
             q_tile_indices = query_tile_index * Q_TILE_SIZE + tl.arange(0, Q_TILE_SIZE)
-            mask = q_tile_indices[:, None] < k_indices[None, :]
-            S = tl.where(mask, -1e6, S)
+            causal_mask = q_tile_indices[:, None] >= k_indices[None, :]
+            S = tl.where(causal_mask, S, float("-inf"))
         
-        m = tl.maximum(m_before, tl.max(S, axis=-1))
-
-        P = tl.exp(S - m[:, None])
-        l = tl.exp(m_before - m) * l + tl.sum(P, axis=-1)
-        o = tl.exp(m_before - m)[:, None] * o + tl.dot(P.to(V_block_ptr.type.element_ty), Vi)
-
-        m_before = m
-
+        m_ij = tl.maximum(tl.max(S, axis=-1), lse_i)
+        P = tl.exp(S - m_ij[:, None])
+        l_ij = tl.sum(P, axis=-1)
+        
+        acc_o_scale = tl.exp(m_i - m_ij)
+        acc_o = acc_o * acc_o_scale[:, None]
+        
+        acc_o += tl.dot(P.to(Vi.dtype), Vi)
+        
+        m_i = m_ij
+        l_i_new = tl.exp(lse_i - m_ij) + l_ij
+        lse_i = m_ij + tl.log(l_i_new)
+        
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
-
-        
-    o = (1 / l)[:, None] * o
-    l = m + tl.log(l)
     
-    tl.store(O_block_ptr, o)
-    tl.store(L_block_ptr, l)
+    o_scale = tl.exp(m_i - lse_i)
+    acc_o = acc_o * o_scale[:, None]
     
+    tl.store(O_block_ptr, acc_o, boundary_check=(0, 1))
+    tl.store(L_block_ptr, lse_i, boundary_check=(0,))
     
 @triton.jit
 def flash_kv_bwd_kernel(
