@@ -229,27 +229,27 @@ class MultiHeadSelfAttention(nn.Module):
     def forward(
         self, x: torch.Tensor, token_positions: torch.Tensor | None = None
     ) -> torch.Tensor:
-        seq_len = x.shape[-2]
 
         queries = self.q_proj(x)
         keys = self.k_proj(x)
         values = self.v_proj(x)
-
+        
         queries = rearrange(
             queries,
-            "... seq_len (num_heads d_heads) -> ... num_heads seq_len d_heads",
+            "... seq_len (num_heads d_heads) -> (... num_heads) seq_len d_heads",
             num_heads=self.num_heads,
-        )
+        ).contiguous()
         keys = rearrange(
             keys,
-            "... seq_len (num_heads d_heads) -> ... num_heads seq_len d_heads",
+            "... seq_len (num_heads d_heads) -> (... num_heads) seq_len d_heads",
             num_heads=self.num_heads,
-        )
+        ).contiguous()
         values = rearrange(
             values,
-            "... seq_len (num_heads d_heads) -> ... num_heads seq_len d_heads",
+            "... seq_len (num_heads d_heads) -> (... num_heads) seq_len d_heads",
             num_heads=self.num_heads,
-        )
+        ).contiguous()
+        
 
         queries = self.q_norm(queries)
         keys = self.k_norm(keys)
@@ -258,18 +258,12 @@ class MultiHeadSelfAttention(nn.Module):
             queries = self.rope(queries, token_positions)
             keys = self.rope(keys, token_positions)
 
-        values = scaled_dot_product_attention(
-            queries,
-            keys,
-            values,
-            ~torch.triu(
-                torch.ones(seq_len, seq_len, device=x.device), diagonal=1
-            ).bool(),
-        )
+        values = scaled_dot_product_attention(queries, keys, values, True)
 
         values = rearrange(
             values,
-            "... num_heads seq_len d_heads -> ... seq_len (num_heads d_heads)",
+            "(b num_heads) seq_len d_heads -> b seq_len (num_heads d_heads)",
+            num_heads=self.num_heads,
         )
 
         return self.output_proj(values)
