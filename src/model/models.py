@@ -4,7 +4,9 @@ import torch.nn as nn
 from einops import rearrange, einsum
 from jaxtyping import Float, Int
 from typing import Literal
+
 from src.utils import softmax
+from src.kernels import FlashAttentionTriton
 
 
 class Linear(nn.Module):
@@ -159,22 +161,26 @@ def scaled_dot_product_attention(
     values: torch.Tensor,
     mask: None | torch.Tensor,
 ) -> torch.Tensor:
+    # pre_softmax_values = einsum(
+    #     queries,
+    #     keys,
+    #     "batch_size ... seq_len_q d_k, batch_size ... seq_len_k d_k -> batch_size ... seq_len_q seq_len_k",
+    # ) / math.sqrt(queries.shape[-1])
 
-    pre_softmax_values = einsum(
-        queries,
-        keys,
-        "batch_size ... seq_len_q d_k, batch_size ... seq_len_k d_k -> batch_size ... seq_len_q seq_len_k",
-    ) / math.sqrt(queries.shape[-1])
+    # if mask is not None:
+    #     pre_softmax_values.masked_fill_(~mask, -torch.inf)
 
-    if mask is not None:
-        pre_softmax_values.masked_fill_(~mask, -torch.inf)
+    # weights = softmax(pre_softmax_values, -1)
 
-    weights = softmax(pre_softmax_values, -1)
-
-    return einsum(
-        weights,
-        values,
-        "batch_size ... seq_len_q seq_len_k, batch_size ... seq_len_k d_v -> batch_size ... seq_len_q d_v",
+    # return einsum(
+    #     weights,
+    #     values,
+    #     "batch_size ... seq_len_q seq_len_k, batch_size ... seq_len_k d_v -> batch_size ... seq_len_q d_v",
+    # )
+    
+    # Using Fused Kernel for better performance
+    return FlashAttentionTriton.apply(
+        queries, keys, values, mask
     )
 
 
