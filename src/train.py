@@ -394,6 +394,8 @@ class Trainer:
             # Update learning rate
             lr = self.get_learning_rate(iteration)
             self.update_learning_rate(lr, self.config.scheduler.use_multiplier)
+            
+            self.update_gradient_accumulation_steps()
 
             for _ in range(self.config.training.gradient_accumulation_steps):
                 # Get batch
