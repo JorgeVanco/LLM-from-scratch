@@ -13,7 +13,7 @@ from dataclasses import asdict
 from src.model import TransformerLM
 from src.data_loading import load_dataset
 from src.optimizers import SGD, AdamW, Muon, MuonWithAuxAdam
-from src.schedulers import get_scheduler
+from src.schedulers import get_scheduler, augment_gradient_acc
 from src.tokenizer import Tokenizer, load_tokenizer
 from src.utils import (
     cross_entropy,
@@ -247,6 +247,12 @@ class Trainer:
                 param_group["lr"] = param_group["initial_lr"] * lr
             else:
                 param_group["lr"] = lr
+                
+    def update_gradient_accumulation_steps(self) -> None:
+        """Update gradient accumulation steps based on current iteration."""
+        self.config.training.gradient_accumulation_steps = augment_gradient_acc(
+            self.current_iter, self.config.training.max_iters
+        )
 
     @torch.no_grad()
     def estimate_loss(self, use_whole_dataset: bool = False) -> dict[str, float]:
