@@ -359,6 +359,7 @@ class TransformerLM(nn.Module):
         )
         self.ln_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
+        torch.nn.init.zeros_(self.lm_head.weight)
 
         self.scalars = nn.Parameter(torch.ones(num_layers // 2))
 
