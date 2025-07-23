@@ -412,14 +412,14 @@ class Trainer:
 
             self.optimizer.step()
 
+            tokens_processed += (
+                self.config.training.batch_size
+                * self.config.model.context_length
+                * self.config.training.gradient_accumulation_steps
+            )
             # Logging
             if iteration % self.config.training.log_interval == 0:
                 elapsed = time.time() - start_time
-                tokens_processed += (
-                    self.config.training.batch_size
-                    * self.config.model.context_length
-                    * self.config.training.gradient_accumulation_steps
-                )
                 tokens_per_sec = tokens_processed / elapsed
 
                 if self.config.scheduler.use_multiplier:
