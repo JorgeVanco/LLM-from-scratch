@@ -34,12 +34,12 @@ class Trainer:
     def __init__(self, config: ExperimentConfig) -> None:
         self.config = config
         self.setup_environment()
-        self.setup_logging()
         self.load_data()
         self.setup_tokenizer()
         self.setup_model()
         self.setup_optimizer()
         self.setup_scheduler()
+        self.setup_logging()
         self.current_iter = 0
         self.best_val_loss = float("inf")
 
@@ -383,9 +383,9 @@ class Trainer:
 
         train_iter = itertools.cycle(self.train_data)
         tokens_processed: int = 0
-        for iteration in tqdm(
-            range(self.current_iter, max_iters), position=0, leave=True
-        ):
+        iteration = self.current_iter
+        pbar = tqdm(total=(max_iters - iteration), position=0, leave=True)
+        while iteration < max_iters:
             self.current_iter = iteration
 
             # Reset gradients
@@ -441,7 +441,7 @@ class Trainer:
 
                 self.log_metrics(metrics, tokens_processed)
 
-                print(
+                tqdm.write(
                     f"Iter {iteration:6d} | Loss: {loss.item():.4f} | "
                     f"LR: {lr:.2e} | Tokens/sec: {tokens_per_sec:.0f} | "
                     f"Tokens processed: {tokens_processed:,} | Elapsed: {elapsed:.2f}s"
@@ -451,7 +451,7 @@ class Trainer:
             if (
                 iteration % self.config.training.eval_interval == 0
                 and iteration > 0
-                or iteration == max_iters - 1
+                or iteration >= max_iters - 1
             ) and self.val_data is not None:
                 losses = self.estimate_loss(use_whole_dataset=False)
 
@@ -467,7 +467,7 @@ class Trainer:
 
                 self.log_metrics(metrics, tokens_processed)
 
-                print(
+                tqdm.write(
                     f"Iter {iteration:6d} | "
                     f"Val Loss: {losses['val']:.4f} | Best: {self.best_val_loss:.4f} | "
                     f"Tokens/sec: {tokens_per_sec:.0f} | Elapsed: {elapsed:.2f}s"
@@ -475,7 +475,7 @@ class Trainer:
 
                 # Generate sample text
                 sample = self.generate_sample()
-                print(f"Sample: {sample}")
+                tqdm.write(f"Sample: {sample}")
 
                 # Save checkpoint if best
                 if is_best:
@@ -484,6 +484,9 @@ class Trainer:
             # Save checkpoint
             if iteration % self.config.training.save_interval == 0 and iteration > 0:
                 self.save_checkpoint(iteration)
+
+            iteration += self.config.training.gradient_accumulation_steps
+            pbar.update(self.config.training.gradient_accumulation_steps)            
 
         print("Training completed!")
         self.save_checkpoint(max_iters)
