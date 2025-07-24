@@ -505,6 +505,10 @@ def flash_q_bwd_kernel(
 ) -> None:
     query_tile_index = tl.program_id(0)
     batch_index = tl.program_id(1)
+
+    start_q = query_tile_index * Q_TILE_SIZE
+    if start_q >= N_QUERIES:
+        return  # Don't do anything for this tile
     
     Q_block_ptr = tl.make_block_ptr(
         Q_ptr + batch_index * stride_qb,
