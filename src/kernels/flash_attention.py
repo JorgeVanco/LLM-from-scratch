@@ -116,9 +116,6 @@ class FlashAttentionTriton(torch.autograd.Function):
         stride_ob, stride_oq, stride_od = O.stride()
         stride_lb, stride_lq = L.stride()
 
-        ctx.Q_TILE_SIZE = 64
-        ctx.K_TILE_SIZE = 64
-        
         ctx.D = Q.size(-1)
         ctx.is_causal = is_causal
 
@@ -126,8 +123,7 @@ class FlashAttentionTriton(torch.autograd.Function):
         N_KEYS = K.size(1)
 
         scale = 1 / (ctx.D ** 0.5)
-        
-        Tq = triton.cdiv(N_QUERIES, ctx.Q_TILE_SIZE)
+        Tq = triton.cdiv(N_QUERIES, 64)  # Will be overridden by autotune
 
         flash_fwd_kernel[(Tq, b)](Q, K, V,
                                   ctx.is_causal,
@@ -139,7 +135,7 @@ class FlashAttentionTriton(torch.autograd.Function):
                                   stride_lb, stride_lq,
                                   N_QUERIES, N_KEYS,
                                   scale, ctx.D,
-                                  Q_TILE_SIZE=ctx.Q_TILE_SIZE, K_TILE_SIZE=ctx.K_TILE_SIZE)
+                                )
 
         ctx.save_for_backward(O, L, Q, K, V)
         
@@ -170,8 +166,8 @@ class FlashAttentionTriton(torch.autograd.Function):
         N_QUERIES = Q.size(1)
         N_KEYS = K.size(1)
 
-        Tq = triton.cdiv(N_QUERIES, ctx.Q_TILE_SIZE)
-        Tk = triton.cdiv(N_KEYS, ctx.K_TILE_SIZE)
+        Tq = triton.cdiv(N_QUERIES, 64)  # Will be overridden by autotune
+        Tk = triton.cdiv(N_KEYS, 64)  # Will be overridden by autotune
         
         scale = 1 / (ctx.D ** 0.5)
         
@@ -190,7 +186,6 @@ class FlashAttentionTriton(torch.autograd.Function):
             stride_dvb, stride_dvk, stride_dvd,
             N_QUERIES, N_KEYS,
             scale, ctx.D,
-            Q_TILE_SIZE=ctx.Q_TILE_SIZE, K_TILE_SIZE=ctx.K_TILE_SIZE
         )
 
         flash_q_bwd_kernel[(Tq, b)](
@@ -207,12 +202,21 @@ class FlashAttentionTriton(torch.autograd.Function):
             stride_dqb, stride_dqq, stride_dqd,
             N_QUERIES, N_KEYS,
             scale, ctx.D,
-            Q_TILE_SIZE=ctx.Q_TILE_SIZE, K_TILE_SIZE=ctx.K_TILE_SIZE
         )
             
         return dQ, dK, dV, None
-    
-    
+
+
+@triton.autotune(
+    configs=[
+        triton.Config({'Q_TILE_SIZE': 64, 'K_TILE_SIZE': 64}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 128, 'K_TILE_SIZE': 128}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 128, 'K_TILE_SIZE': 64}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 64, 'K_TILE_SIZE': 128}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 256, 'K_TILE_SIZE': 256}, num_warps=8),
+    ],
+    key=['N_QUERIES', 'N_KEYS', 'D']  # Autotune when these dimensions change
+) 
 @triton.jit
 def flash_fwd_kernel(
     Q_ptr, K_ptr, V_ptr,
@@ -319,7 +323,18 @@ def flash_fwd_kernel(
     
     tl.store(O_block_ptr, acc_o, boundary_check=(0, 1))
     tl.store(L_block_ptr, lse_i, boundary_check=(0,))
-    
+
+
+@triton.autotune(
+    configs=[
+        triton.Config({'Q_TILE_SIZE': 64, 'K_TILE_SIZE': 64}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 128, 'K_TILE_SIZE': 128}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 128, 'K_TILE_SIZE': 64}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 64, 'K_TILE_SIZE': 128}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 256, 'K_TILE_SIZE': 256}, num_warps=8),
+    ],
+    key=['N_QUERIES', 'N_KEYS', 'D']  # Autotune when these dimensions change
+)    
 @triton.jit
 def flash_kv_bwd_kernel(
     Q_ptr, K_ptr, V_ptr,
@@ -457,8 +472,18 @@ def flash_kv_bwd_kernel(
 
     tl.store(dK_block_ptr, dk)
     tl.store(dV_block_ptr, dv)
-    
-    
+ 
+   
+@triton.autotune(
+    configs=[
+        triton.Config({'Q_TILE_SIZE': 64, 'K_TILE_SIZE': 64}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 128, 'K_TILE_SIZE': 128}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 128, 'K_TILE_SIZE': 64}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 64, 'K_TILE_SIZE': 128}, num_warps=4),
+        triton.Config({'Q_TILE_SIZE': 256, 'K_TILE_SIZE': 256}, num_warps=8),
+    ],
+    key=['N_QUERIES', 'N_KEYS', 'D']  # Autotune when these dimensions change
+) 
 @triton.jit
 def flash_q_bwd_kernel(
     Q_ptr, K_ptr, V_ptr,
