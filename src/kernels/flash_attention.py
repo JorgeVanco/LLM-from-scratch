@@ -344,6 +344,10 @@ def flash_kv_bwd_kernel(
     key_tile_index = tl.program_id(0)
     batch_index = tl.program_id(1)
     
+    start_k = key_tile_index * K_TILE_SIZE
+    if start_k >= N_KEYS:
+        return  # Don't do anything for this tile
+    
     Q_block_ptr = tl.make_block_ptr(
         Q_ptr + batch_index * stride_qb,
         shape=(N_QUERIES, D),
