@@ -147,7 +147,7 @@ class RotaryPositionalEmbedding(nn.Module):
         self.register_buffer("R", R, persistent=False)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
-        position_matrices = self.R[token_positions]
+        position_matrices = self.R[token_positions] # type: ignore
         x = rearrange(x, "... seq (k d1) -> ... seq k d1", d1=2)
         applied_rotary = einsum(
             x, position_matrices, "... seq k d1, ... seq k d2 d1 -> ... seq k d2"
@@ -159,29 +159,36 @@ def scaled_dot_product_attention(
     queries: torch.Tensor,
     keys: torch.Tensor,
     values: torch.Tensor,
+    sinks: torch.Tensor,
     mask: bool = False,
 ) -> torch.Tensor:
-    # pre_softmax_values = einsum(
-    #     queries,
-    #     keys,
-    #     "batch_size ... seq_len_q d_k, batch_size ... seq_len_k d_k -> batch_size ... seq_len_q seq_len_k",
-    # ) / math.sqrt(queries.shape[-1])
-
-    # if mask is not None:
-    #     pre_softmax_values.masked_fill_(~mask, -torch.inf)
-
-    # weights = softmax(pre_softmax_values, -1)
-
-    # return einsum(
-    #     weights,
-    #     values,
-    #     "batch_size ... seq_len_q seq_len_k, batch_size ... seq_len_k d_v -> batch_size ... seq_len_q d_v",
-    # )
+    b_num_heads, seq_len, d_head = queries.shape
+    sinks = sinks.reshape(-1, 1, 1).repeat(b_num_heads // sinks.shape[0], seq_len, 1)   # Reshape sinks
     
-    # Using Fused Kernel for better performance
-    return FlashAttentionTriton.apply(
-        queries, keys, values, mask
+    pre_softmax_values = einsum(
+        queries,
+        keys,
+        "batch_size ... seq_len_q d_k, batch_size ... seq_len_k d_k -> batch_size ... seq_len_q seq_len_k",
+    ) / math.sqrt(queries.shape[-1])
+
+    if mask:
+        mask_tensor = torch.triu(torch.ones((seq_len, seq_len), device=queries.device), diagonal=1).bool()
+        pre_softmax_values.masked_fill_(mask_tensor, -torch.inf)
+
+    pre_softmax_values = torch.cat([pre_softmax_values, sinks], dim=-1) # Concatenate sink values
+
+    weights = softmax(pre_softmax_values, -1)
+    weights = weights[..., :-1]  # Remove sink weights
+    return einsum(
+        weights,
+        values,
+        "batch_size ... seq_len_q seq_len_k, batch_size ... seq_len_k d_v -> batch_size ... seq_len_q d_v",
     )
+    
+    # # Using Fused Kernel for better performance
+    # return FlashAttentionTriton.apply(
+    #     queries, keys, values, mask
+    # )
 
 
 class MultiHeadSelfAttention(nn.Module):
@@ -201,19 +208,25 @@ class MultiHeadSelfAttention(nn.Module):
 
         self.num_heads = num_heads
 
-        self.q_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
+        self.q_proj = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
-        self.k_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
+        self.k_proj = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
-        self.v_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
+        self.v_proj = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
         # self.proj: Float[torch.Tensor, ""]
-        self.output_proj: Float[torch.Tensor, " d_model d_model"] = Linear(
+        self.output_proj = Linear(
             d_model, d_model, device=device, dtype=dtype
         )
+        
+        # Attention sinks https://github.com/openai/gpt-oss/blob/main/gpt_oss/torch/model.py
+        self.sinks = torch.nn.Parameter(
+            torch.empty(num_heads, device=device, dtype=torch.bfloat16)
+        )
+        
         self.q_norm = (
             RMSNorm(d_head, elementwise_affine=False, device=device, dtype=dtype)
             if qk_norm
@@ -258,7 +271,7 @@ class MultiHeadSelfAttention(nn.Module):
             queries = self.rope(queries, token_positions)
             keys = self.rope(keys, token_positions)
 
-        values = scaled_dot_product_attention(queries, keys, values, True)
+        values = scaled_dot_product_attention(queries, keys, values, self.sinks, True)
 
         values = rearrange(
             values,
@@ -386,3 +399,4 @@ if __name__ == "__main__":
     model = TransformerLM(50257, 1024, 48, 1600, 25, 6400, False, 1000)
     # model = TransformerLM(100, 10, 3, 32, 2, 64, False, 1000)
     print(sum(p.numel() for p in model.parameters()))
+    print(model(torch.randint(0, 50257, (2, 1024))).shape)
